@@ -22,6 +22,9 @@ class User(Base):
     sessions: Mapped[list["UserSession"]] = relationship(
         "UserSession", back_populates="user", cascade="all, delete-orphan"
     )
+    non_banking_transactions: Mapped[list["NonBankingTransaction"]] = relationship(
+        "NonBankingTransaction", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserSession(Base):
@@ -67,3 +70,19 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     statement: Mapped["Statement"] = relationship("Statement", back_populates="transactions")
+
+
+class NonBankingTransaction(Base):
+    __tablename__ = "non_banking_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    transaction_date: Mapped[str] = mapped_column(Date, nullable=False)
+    beneficiary: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="Others / Uncategorized")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship("User", back_populates="non_banking_transactions")

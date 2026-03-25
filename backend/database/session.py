@@ -62,6 +62,46 @@ def _run_lightweight_migrations() -> None:
         if "password_salt" not in user_columns:
             _execute_ddl("ALTER TABLE users ADD COLUMN password_salt VARCHAR(255) NOT NULL DEFAULT ''")
 
+    if "non_banking_transactions" not in tables:
+        _execute_ddl(
+            """
+            CREATE TABLE non_banking_transactions (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                user_id INTEGER NOT NULL,
+                transaction_date DATE NOT NULL,
+                beneficiary VARCHAR(255) NOT NULL,
+                amount FLOAT NOT NULL,
+                transaction_type VARCHAR(20) NOT NULL,
+                category VARCHAR(50) NOT NULL DEFAULT 'Others / Uncategorized',
+                description TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_non_banking_transaction_user FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+            if engine.dialect.name != "sqlite"
+            else """
+            CREATE TABLE non_banking_transactions (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                transaction_date DATE NOT NULL,
+                beneficiary VARCHAR(255) NOT NULL,
+                amount FLOAT NOT NULL,
+                transaction_type VARCHAR(20) NOT NULL,
+                category VARCHAR(50) NOT NULL DEFAULT 'Others / Uncategorized',
+                description TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        _create_index_if_missing("non_banking_transactions", "ix_non_banking_transactions_user_id", ["user_id"])
+    else:
+        non_banking_columns = {column["name"] for column in inspector.get_columns("non_banking_transactions")}
+        if "category" not in non_banking_columns:
+            _execute_ddl(
+                "ALTER TABLE non_banking_transactions ADD COLUMN category VARCHAR(50) NOT NULL DEFAULT 'Others / Uncategorized'"
+            )
+
 
 def _execute_ddl(statement: str) -> None:
     with engine.begin() as connection:

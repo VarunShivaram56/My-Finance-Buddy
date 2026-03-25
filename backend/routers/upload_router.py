@@ -22,6 +22,15 @@ class TransactionCategoryUpdatePayload(BaseModel):
     category: str
 
 
+class NonBankingTransactionCreatePayload(BaseModel):
+    transactionDate: str
+    beneficiary: str
+    description: str = ""
+    transactionType: str
+    category: str
+    amount: float
+
+
 router = APIRouter()
 statement_service = StatementService()
 retriever = FinanceRetriever()
@@ -92,3 +101,21 @@ def update_transaction_category(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     return statement_service.update_transaction_category(db, current_user, payload.transactionId, payload.category)
+
+
+@router.post("/non-banking-transactions")
+def create_non_banking_transaction(
+    payload: NonBankingTransactionCreatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return statement_service.add_non_banking_transaction(
+        db,
+        current_user,
+        payload.transactionDate,
+        payload.beneficiary,
+        payload.amount,
+        payload.transactionType,
+        payload.category,
+        payload.description,
+    )

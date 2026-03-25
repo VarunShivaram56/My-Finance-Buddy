@@ -43,37 +43,38 @@ function ChatbotPage() {
     <div className="min-h-screen px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-5xl">
         <section className="currency-panel rounded-[2rem] border border-white/60 bg-white/75 px-6 py-10 shadow-soft backdrop-blur sm:px-10">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <span className="rounded-full bg-skywash px-4 py-2 text-sm font-medium text-[#9e5a2c]">
+          <div className="flex flex-col items-center">
+            <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <span className="mx-auto w-fit rounded-full bg-skywash px-4 py-2 text-sm font-medium text-[#9e5a2c] sm:mx-0">
                 Finance AI with RAG and general chat
               </span>
-              <h1 className="mt-5 text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
-                Finance AI Assistant
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                Choose retrieval mode for answers grounded in your uploaded data, or general mode for normal LLM chat.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <div className="inline-flex h-fit items-center rounded-2xl bg-white px-4 py-3 text-sm font-medium text-ink shadow-soft ring-1 ring-borderSoft">
+              <div className="inline-flex items-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft">
                 {user?.name}
               </div>
+            </div>
+
+            <h1 className="mt-5 w-full text-center text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
+              Finance AI Assistant
+            </h1>
+            <p className="mt-3 max-w-2xl text-center text-sm leading-7 text-slate-600">
+              Choose retrieval mode for answers grounded in your uploaded data, or general mode for normal LLM chat.
+            </p>
+
+            <div className="mt-8 flex w-full max-w-3xl flex-wrap items-center justify-center gap-3">
               <Link
                 to="/"
-                className="inline-flex h-fit items-center rounded-2xl bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:bg-clay"
+                className="inline-flex min-w-[190px] items-center justify-center rounded-2xl bg-ink px-6 py-3 text-sm font-semibold text-white transition hover:bg-clay"
               >
                 Back to Dashboard
               </Link>
               <button
                 type="button"
                 onClick={logout}
-                className="inline-flex h-fit items-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
+                className="inline-flex min-w-[150px] items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
               >
                 Logout
               </button>
             </div>
-          </div>
 
           <div className="mt-8 rounded-3xl bg-white/90 p-6 shadow-soft ring-1 ring-borderSoft">
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end">
@@ -133,6 +134,7 @@ function ChatbotPage() {
                 Ask AI
               </button>
             </form>
+          </div>
           </div>
         </section>
       </div>

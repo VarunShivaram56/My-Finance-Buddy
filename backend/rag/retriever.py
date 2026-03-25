@@ -7,7 +7,7 @@ import logging
 import chromadb
 from sqlalchemy.orm import Session
 
-from database.models import Statement, Transaction
+from database.models import NonBankingTransaction, Statement, Transaction
 from rag.embeddings import EmbeddingService
 from services.stats import build_dashboard_payload
 from utils.config import settings
@@ -50,10 +50,16 @@ class FinanceRetriever:
             .order_by(Transaction.transaction_date.asc())
             .all()
         )
-        if not transactions:
+        non_banking_transactions = (
+            db.query(NonBankingTransaction)
+            .filter(NonBankingTransaction.user_id == user_id)
+            .order_by(NonBankingTransaction.transaction_date.asc())
+            .all()
+        )
+        if not transactions and not non_banking_transactions:
             return
 
-        chunks = build_finance_chunks(transactions)
+        chunks = build_finance_chunks(transactions, non_banking_transactions)
         embeddings = self.embedding_service.embed_many([chunk.text for chunk in chunks])
         self._upsert_chunks(user_id, chunks, embeddings)
 
@@ -125,16 +131,48 @@ class FinanceRetriever:
             )
 
 
-def build_finance_chunks(transactions: list[Transaction]) -> list[RetrievalChunk]:
+def build_finance_chunks(
+    transactions: list[Transaction],
+    non_banking_transactions: list[NonBankingTransaction] | None = None,
+) -> list[RetrievalChunk]:
     dashboard = build_dashboard_payload(transactions, insights="")
     chunks: list[RetrievalChunk] = []
+    non_banking_transactions = non_banking_transactions or []
 
     chunks.extend(_build_transaction_chunks(transactions))
+    chunks.extend(_build_non_banking_transaction_chunks(non_banking_transactions))
     chunks.extend(_build_merchant_summary_chunks(transactions))
     chunks.extend(_build_category_summary_chunks(transactions))
     chunks.extend(_build_month_summary_chunks(dashboard))
     chunks.extend(_build_dashboard_summary_chunks(dashboard))
 
+    return chunks
+
+
+def _build_non_banking_transaction_chunks(transactions: list[NonBankingTransaction]) -> list[RetrievalChunk]:
+    chunks: list[RetrievalChunk] = []
+    for transaction in transactions:
+        date_text = transaction.transaction_date.isoformat()
+        description = (transaction.description or "").strip()
+        text = (
+            f"Non-Banking Transaction Record | Date: {date_text} | Beneficiary: {transaction.beneficiary} | "
+            f"Category: {transaction.category} | Type: {transaction.transaction_type} | Amount: Rs {transaction.amount:.2f} | "
+            f"Description: {description or 'N/A'}"
+        )
+        chunks.append(
+            RetrievalChunk(
+                id=f"non-banking-transaction-{transaction.id}",
+                text=text,
+                metadata={
+                    "kind": "transaction",
+                    "transaction_id": f"non-banking-{transaction.id}",
+                    "merchant": transaction.beneficiary.lower(),
+                    "category": transaction.category.lower(),
+                    "date": date_text,
+                    "type": transaction.transaction_type,
+                },
+            )
+        )
     return chunks
 
 

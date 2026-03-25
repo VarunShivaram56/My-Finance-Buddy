@@ -63,6 +63,11 @@ export const updateTransactionCategory = async (transactionId, category) => {
   return response.data;
 };
 
+export const createNonBankingTransaction = async (payload) => {
+  const response = await api.post("/non-banking-transactions", payload);
+  return response.data;
+};
+
 export const registerUser = async (payload) => {
   const response = await api.post("/auth/register", payload);
   return response.data;

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from agents.agent_manager import AgentManager
-from database.models import Statement, Transaction, User
+from database.models import NonBankingTransaction, Statement, Transaction, User
 from rag.retriever import FinanceRetriever
 from services.bank_profiles import get_supported_banks_payload
 from services.categorizer import CategorizationInput, TransactionCategorizer
@@ -132,7 +132,10 @@ class StatementService:
             ]
         )
         all_transactions = self._user_transactions_query(db, current_user.id).order_by(Transaction.transaction_date.asc()).all()
-        dashboard = self._build_cached_payloads(current_user.id, all_transactions, insights)
+        non_banking_transactions = self._user_non_banking_transactions_query(db, current_user.id).order_by(
+            NonBankingTransaction.transaction_date.asc()
+        ).all()
+        dashboard = self._build_cached_payloads(current_user.id, all_transactions, non_banking_transactions, insights)
         return {
             "statementId": statement.id,
             "parsedCount": len(db_transactions),
@@ -147,11 +150,14 @@ class StatementService:
             return cached
 
         transactions = self._user_transactions_query(db, current_user.id).order_by(Transaction.transaction_date.asc()).all()
-        if not transactions:
+        non_banking_transactions = self._user_non_banking_transactions_query(db, current_user.id).order_by(
+            NonBankingTransaction.transaction_date.asc()
+        ).all()
+        if not transactions and not non_banking_transactions:
             dashboard = empty_dashboard_payload()
             dashboard["supportedBanks"] = get_supported_banks_payload()
             return dashboard
-        payloads = self._build_cached_payloads(current_user.id, transactions, insights="")
+        payloads = self._build_cached_payloads(current_user.id, transactions, non_banking_transactions, insights="")
         return payloads["transactions" if include_transactions else "summary"]
 
     def update_transaction_type(self, db: Session, current_user: User, transaction_id: int, transaction_type: str) -> dict:
@@ -193,17 +199,80 @@ class StatementService:
             "dashboard": dashboard,
         }
 
+    def add_non_banking_transaction(
+        self,
+        db: Session,
+        current_user: User,
+        transaction_date: str,
+        beneficiary: str,
+        amount: float,
+        transaction_type: str,
+        category: str,
+        description: str | None = None,
+    ) -> dict:
+        try:
+            parsed_date = date.fromisoformat(transaction_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Enter a valid transaction date.") from exc
+
+        beneficiary_name = beneficiary.strip()
+        if len(beneficiary_name) < 2:
+            raise HTTPException(status_code=400, detail="Beneficiary name must be at least 2 characters long.")
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than zero.")
+        if transaction_type not in {"debit", "credit"}:
+            raise HTTPException(status_code=400, detail="Transaction type must be debit or credit.")
+        if category not in CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid category.")
+
+        transaction = NonBankingTransaction(
+            user_id=current_user.id,
+            transaction_date=parsed_date,
+            beneficiary=beneficiary_name[:255],
+            amount=round(amount, 2),
+            transaction_type=transaction_type,
+            category=category,
+            description=(description or "").strip() or None,
+        )
+        db.add(transaction)
+        db.commit()
+        db.refresh(transaction)
+
+        dashboard_cache.clear(current_user.id)
+        dashboard = self.fetch_dashboard(db, current_user, include_transactions=True)
+        self._refresh_retriever_index(db, current_user.id)
+        return {
+            "message": "Non-banking transaction added successfully.",
+            "dashboard": dashboard,
+        }
+
     def _extract_rows(self, file_bytes: bytes, bank_name: str) -> list[list[str]]:
         specialized_rows = extract_bank_rows(file_bytes, bank_name)
         if specialized_rows:
             return specialized_rows
         return extract_rows_from_pdf(file_bytes)
 
-    def _build_cached_payloads(self, user_id: int, transactions: list[Transaction], insights: str) -> dict[str, dict]:
-        summary_payload = build_dashboard_payload(transactions, insights, include_transactions=False)
+    def _build_cached_payloads(
+        self,
+        user_id: int,
+        transactions: list[Transaction],
+        non_banking_transactions: list[NonBankingTransaction],
+        insights: str,
+    ) -> dict[str, dict]:
+        summary_payload = build_dashboard_payload(
+            transactions,
+            insights,
+            include_transactions=False,
+            non_banking_transactions=non_banking_transactions,
+        )
         summary_payload["supportedBanks"] = get_supported_banks_payload()
 
-        transactions_payload = build_dashboard_payload(transactions, insights, include_transactions=True)
+        transactions_payload = build_dashboard_payload(
+            transactions,
+            insights,
+            include_transactions=True,
+            non_banking_transactions=non_banking_transactions,
+        )
         transactions_payload["supportedBanks"] = get_supported_banks_payload()
 
         dashboard_cache.set(user_id, summary_payload, transactions_payload)
@@ -217,3 +286,6 @@ class StatementService:
 
     def _user_transactions_query(self, db: Session, user_id: int):
         return db.query(Transaction).join(Transaction.statement).filter(Statement.user_id == user_id)
+
+    def _user_non_banking_transactions_query(self, db: Session, user_id: int):
+        return db.query(NonBankingTransaction).filter(NonBankingTransaction.user_id == user_id)

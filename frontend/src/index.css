@@ -76,6 +76,30 @@ body::after {
   opacity: 0.55;
 }
 
+.transaction-scrollbar {
+  scrollbar-color: rgba(194, 108, 50, 0.5) rgba(248, 229, 208, 0.7);
+  scrollbar-width: thin;
+}
+
+.transaction-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+
+.transaction-scrollbar::-webkit-scrollbar-track {
+  background: rgba(248, 229, 208, 0.7);
+  border-radius: 999px;
+}
+
+.transaction-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(194, 108, 50, 0.45);
+  border-radius: 999px;
+  border: 2px solid rgba(248, 229, 208, 0.7);
+}
+
+.transaction-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(194, 108, 50, 0.65);
+}
+
 @keyframes blink {
   0%, 49% {
     opacity: 1;

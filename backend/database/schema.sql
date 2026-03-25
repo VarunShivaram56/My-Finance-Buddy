@@ -43,3 +43,16 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_statement FOREIGN KEY (statement_id) REFERENCES statements(id)
 );
+
+CREATE TABLE IF NOT EXISTS non_banking_transactions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    transaction_date DATE NOT NULL,
+    beneficiary VARCHAR(255) NOT NULL,
+    amount DOUBLE NOT NULL,
+    transaction_type VARCHAR(20) NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'Others / Uncategorized',
+    description TEXT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_non_banking_transaction_user FOREIGN KEY (user_id) REFERENCES users(id)
+);

@@ -173,6 +173,10 @@ function FinanceDashboardPage() {
     window.open("https://www.ilovepdf.com/redact-pdf", "_blank", "noopener,noreferrer");
   };
 
+  const openUnlockTool = () => {
+    window.open("https://www.ilovepdf.com/unlock_pdf", "_blank", "noopener,noreferrer");
+  };
+
   const handleResetData = async () => {
     setResetting(true);
     setError("");
@@ -212,33 +216,12 @@ function FinanceDashboardPage() {
       <div className="mx-auto max-w-7xl">
         <section className="currency-panel rounded-[2rem] border border-white/60 bg-white/75 px-6 py-14 shadow-soft backdrop-blur sm:px-10">
           <div className="mx-auto flex max-w-4xl flex-col items-center">
-            <div className="flex w-full flex-col items-center justify-between gap-4 sm:flex-row">
-              <span className="rounded-full bg-skywash px-4 py-2 text-sm font-medium text-[#9e5a2c]">
+            <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <span className="mx-auto w-fit rounded-full bg-skywash px-4 py-2 text-sm font-medium text-[#9e5a2c] sm:mx-0">
                 Local-first statement intelligence
               </span>
-              <div className="flex flex-wrap gap-3">
-                <div className="inline-flex items-center rounded-2xl bg-white px-4 py-3 text-sm font-medium text-ink shadow-soft ring-1 ring-borderSoft">
-                  {user?.name}
-                </div>
-                <Link
-                  to="/transactions"
-                  className="inline-flex items-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
-                >
-                  Manage Transactions
-                </Link>
-                <Link
-                  to="/chatbot"
-                  className="inline-flex items-center rounded-2xl bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:bg-clay"
-                >
-                  Open Finance AI Assistant
-                </Link>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="inline-flex items-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
-                >
-                  Logout
-                </button>
+              <div className="inline-flex items-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft">
+                {user?.name}
               </div>
             </div>
             <h1 className="mt-6 text-center text-4xl font-semibold tracking-tight text-ink sm:text-6xl">
@@ -246,6 +229,28 @@ function FinanceDashboardPage() {
             </h1>
             <div className="mt-6">
               <TypewriterQuotes />
+            </div>
+
+            <div className="mt-8 flex w-full max-w-3xl flex-wrap items-center justify-center gap-3">
+              <Link
+                to="/transactions"
+                className="inline-flex min-w-[210px] items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
+              >
+                Manage Transactions
+              </Link>
+              <Link
+                to="/chatbot"
+                className="inline-flex min-w-[230px] items-center justify-center rounded-2xl bg-ink px-6 py-3 text-sm font-semibold text-white transition hover:bg-clay"
+              >
+                Open Finance AI Assistant
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                className="inline-flex min-w-[150px] items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
+              >
+                Logout
+              </button>
             </div>
 
             <div className="mt-8 w-full max-w-3xl rounded-3xl bg-white/85 p-5 shadow-soft ring-1 ring-borderSoft">
@@ -272,7 +277,7 @@ function FinanceDashboardPage() {
               </div>
             </div>
 
-            <div className="mt-10 grid w-full max-w-3xl gap-6 md:grid-cols-2">
+            <div className="mt-10 grid w-full max-w-4xl gap-6 md:grid-cols-2">
               <ActionButtonCard
                 title={uploading ? "Uploading..." : "Upload Redacted PDF"}
                 tooltip="Upload a bank statement that has already been redacted to ensure your financial privacy."
@@ -286,6 +291,10 @@ function FinanceDashboardPage() {
                 onClick={openRedactionTool}
                 accent="bg-gradient-to-br from-white to-[#fff7ee]"
                 disabled={uploading}
+                secondaryAction={{
+                  label: "Unlock Locked PDF",
+                  onClick: openUnlockTool,
+                }}
               />
             </div>
 
