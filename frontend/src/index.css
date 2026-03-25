@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(241, 184, 114, 0.22), transparent 24%),
+    radial-gradient(circle at 85% 12%, rgba(201, 121, 67, 0.12), transparent 18%),
+    linear-gradient(180deg, #fffdf9 0%, #fff3e1 100%);
+  color: #7a3d1c;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::before {
+  background:
+    radial-gradient(circle at 18% 26%, rgba(215, 150, 83, 0.14) 0 2px, transparent 2px 100%),
+    radial-gradient(circle at 82% 68%, rgba(143, 155, 87, 0.11) 0 2px, transparent 2px 100%);
+  background-size: 220px 220px, 260px 260px;
+  opacity: 0.7;
+}
+
+body::after {
+  background:
+    linear-gradient(120deg, transparent 0 43%, rgba(194, 108, 50, 0.07) 43% 44%, transparent 44% 100%),
+    linear-gradient(60deg, transparent 0 56%, rgba(232, 161, 91, 0.08) 56% 57%, transparent 57% 100%);
+  background-size: 300px 300px, 360px 360px;
+  opacity: 0.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.typewriter-caret::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  margin-left: 4px;
+  background: #c26c32;
+  animation: blink 0.9s steps(1) infinite;
+  vertical-align: text-bottom;
+}
+
+.currency-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.currency-panel::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(194, 108, 50, 0.14);
+  border-radius: 28px;
+  pointer-events: none;
+}
+
+.lotus-wave {
+  background:
+    radial-gradient(circle at 25% 50%, rgba(249, 198, 139, 0.22) 0 18%, transparent 19%),
+    radial-gradient(circle at 50% 50%, rgba(194, 108, 50, 0.16) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 50%, rgba(143, 155, 87, 0.14) 0 18%, transparent 19%);
+  background-size: 72px 20px;
+  background-repeat: repeat-x;
+  opacity: 0.55;
+}
+
+@keyframes blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}

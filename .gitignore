@@ -1,0 +1,29 @@
+# Local environment files
+backend/.env
+frontend/.env
+
+# Python caches and virtual environments
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.venv/
+venv/
+backend/.venv/
+backend/venv/
+
+# Vector database and local runtime artifacts
+backend/chroma_data/
+backend/*.sqlite3
+backend/*.db
+*.log
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/build/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
