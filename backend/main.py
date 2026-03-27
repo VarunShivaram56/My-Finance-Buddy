@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.session import check_database_connection, initialize_database
 from routers.auth_router import router as auth_router
 from routers.chat_router import router as chat_router
+from routers.loans_router import router as loans_router
 from routers.reset_router import router as reset_router
 from routers.upload_router import router as upload_router
 
@@ -39,6 +40,7 @@ app.add_middleware(
 
 app.include_router(upload_router)
 app.include_router(chat_router)
+app.include_router(loans_router)
 app.include_router(reset_router)
 app.include_router(auth_router)
 

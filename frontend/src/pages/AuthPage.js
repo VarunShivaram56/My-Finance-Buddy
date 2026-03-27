@@ -9,7 +9,7 @@ function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", user_id: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +25,7 @@ function AuthPage() {
       if (mode === "register") {
         await register(form);
       } else {
-        await login({ email: form.email, password: form.password });
+        await login({ user_id: form.user_id, password: form.password });
       }
       navigate(location.state?.from?.pathname || "/", { replace: true });
     } catch (requestError) {
@@ -85,10 +85,11 @@ function AuthPage() {
                   />
                 ) : null}
                 <input
-                  value={form.email}
-                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="Email address"
-                  type="email"
+                  value={form.user_id}
+                  onChange={(event) => setForm((current) => ({ ...current, user_id: event.target.value }))}
+                  placeholder="User ID"
+                  type="text"
+                  autoComplete="username"
                   className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
                 />
                 <input
@@ -96,6 +97,7 @@ function AuthPage() {
                   onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
                   placeholder="Password"
                   type="password"
+                  autoComplete="current-password"
                   className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
                 />
 

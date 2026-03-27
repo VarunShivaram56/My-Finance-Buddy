@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from database.models import NonBankingTransaction, Statement, Transaction, User
+from database.models import Loan, NonBankingTransaction, Statement, Transaction, User
 from database.session import get_db
 from rag.retriever import FinanceRetriever
 from routers.auth_router import get_current_user
@@ -22,6 +22,7 @@ def reset_data(db: Session = Depends(get_db), current_user: User = Depends(get_c
         db.query(Transaction).filter(Transaction.statement_id.in_(statement_ids)).delete(synchronize_session=False)
         db.query(Statement).filter(Statement.id.in_(statement_ids)).delete(synchronize_session=False)
     db.query(NonBankingTransaction).filter(NonBankingTransaction.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(Loan).filter(Loan.user_id == current_user.id).delete(synchronize_session=False)
     db.commit()
     dashboard_cache.clear(current_user.id)
     retriever.clear(current_user.id)

@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
-const PIE_COLORS = ["#e8a15b", "#f3c48d", "#c26c32", "#f7ddb9", "#8f9b57", "#d98a48"];
+const PIE_COLORS = ["#e8a15b", "#f3c48d", "#c26c32", "#f7ddb9", "#8f9b57", "#d98a48", "#a3704a", "#bfa679"];
 
 function Card({ title, children }) {
   return (
@@ -68,6 +68,49 @@ function ChartsGrid({ dashboard }) {
         </ResponsiveContainer>
       </Card>
 
+      <Card title="Credit vs Debit">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={dashboard.creditVsDebit || []}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={110}
+              label={({ name, value }) => `${name}: ₹${value.toLocaleString()}`}
+            >
+              <Cell fill="#8f9b57" />
+              <Cell fill="#c26c32" />
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </Card>
+
+      <Card title="Weekday Spending Pattern">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={dashboard.weekdaySpending || []}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1dfcc" />
+            <XAxis dataKey="day" stroke="#99613a" />
+            <YAxis stroke="#99613a" />
+            <Tooltip />
+            <Bar dataKey="amount" fill="#d98a48" radius={[10, 10, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
+
+      <Card title="Top Categories">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={dashboard.topCategories || []} layout="vertical">
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1dfcc" />
+            <XAxis type="number" stroke="#99613a" />
+            <YAxis type="category" dataKey="name" stroke="#99613a" width={140} tick={{ fontSize: 12 }} />
+            <Tooltip />
+            <Bar dataKey="value" fill="#e8a15b" radius={[0, 10, 10, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
+
       <Card title="Top Merchants">
         <div className="space-y-3">
           {dashboard.topMerchants.length === 0 ? (
@@ -82,6 +125,34 @@ function ChartsGrid({ dashboard }) {
                 <span className="font-semibold text-slate-600">Rs {merchant.amount.toFixed(2)}</span>
               </div>
             ))
+          )}
+        </div>
+      </Card>
+
+      <Card title="Recurring Merchants">
+        <div className="space-y-2 overflow-y-auto" style={{ maxHeight: "20rem" }}>
+          {(dashboard.recurringMerchants || []).length === 0 ? (
+            <p className="text-slate-500">No recurring merchants detected yet.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-4 gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
+                <span>Merchant</span>
+                <span className="text-center">Count</span>
+                <span className="text-right">Total</span>
+                <span className="text-right">Average</span>
+              </div>
+              {(dashboard.recurringMerchants || []).map((item, index) => (
+                <div
+                  key={`recurring-${index}`}
+                  className="grid grid-cols-4 gap-2 rounded-2xl bg-skywash px-4 py-3 text-sm"
+                >
+                  <span className="font-medium text-ink truncate">{item.merchant}</span>
+                  <span className="text-center text-slate-600">{item.count}×</span>
+                  <span className="text-right text-slate-600">₹{item.total.toLocaleString()}</span>
+                  <span className="text-right font-semibold text-ink">₹{item.average.toLocaleString()}</span>
+                </div>
+              ))}
+            </>
           )}
         </div>
       </Card>

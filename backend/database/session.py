@@ -57,10 +57,32 @@ def _run_lightweight_migrations() -> None:
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         if "name" not in user_columns:
             _execute_ddl("ALTER TABLE users ADD COLUMN name VARCHAR(120) NOT NULL DEFAULT 'User'")
+        if "user_id" not in user_columns:
+            _execute_ddl("ALTER TABLE users ADD COLUMN user_id VARCHAR(64) NOT NULL DEFAULT ''")
+            _create_index_if_missing("users", "ix_users_user_id", ["user_id"])
         if "password_hash" not in user_columns:
             _execute_ddl("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT ''")
         if "password_salt" not in user_columns:
             _execute_ddl("ALTER TABLE users ADD COLUMN password_salt VARCHAR(255) NOT NULL DEFAULT ''")
+        # Drop the legacy email column — it is no longer used and blocks inserts
+        if "email" in user_columns:
+            if engine.dialect.name == "mysql":
+                # MySQL: check if email has a UNIQUE index/key and drop it first
+                try:
+                    _execute_ddl("ALTER TABLE users DROP INDEX email")
+                except Exception:
+                    pass
+                try:
+                    _execute_ddl("ALTER TABLE users DROP INDEX ix_users_email")
+                except Exception:
+                    pass
+                _execute_ddl("ALTER TABLE users DROP COLUMN email")
+            else:
+                # SQLite doesn't support DROP COLUMN in older versions, make it nullable
+                try:
+                    _execute_ddl("ALTER TABLE users DROP COLUMN email")
+                except Exception:
+                    pass
 
     if "non_banking_transactions" not in tables:
         _execute_ddl(
@@ -101,6 +123,48 @@ def _run_lightweight_migrations() -> None:
             _execute_ddl(
                 "ALTER TABLE non_banking_transactions ADD COLUMN category VARCHAR(50) NOT NULL DEFAULT 'Others / Uncategorized'"
             )
+
+    if "loans" not in tables:
+        _execute_ddl(
+            """
+            CREATE TABLE loans (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                user_id INTEGER NOT NULL,
+                loan_name VARCHAR(255) NOT NULL,
+                lender VARCHAR(255) NOT NULL,
+                principal_amount DOUBLE NOT NULL,
+                interest_rate DOUBLE NOT NULL,
+                tenure_months INTEGER NOT NULL,
+                emi_amount DOUBLE NOT NULL DEFAULT 0,
+                start_date DATE NOT NULL,
+                total_paid DOUBLE NOT NULL DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                notes TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_loan_user FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+            if engine.dialect.name != "sqlite"
+            else """
+            CREATE TABLE loans (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                loan_name VARCHAR(255) NOT NULL,
+                lender VARCHAR(255) NOT NULL,
+                principal_amount DOUBLE NOT NULL,
+                interest_rate DOUBLE NOT NULL,
+                tenure_months INTEGER NOT NULL,
+                emi_amount DOUBLE NOT NULL DEFAULT 0,
+                start_date DATE NOT NULL,
+                total_paid DOUBLE NOT NULL DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                notes TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        _create_index_if_missing("loans", "ix_loans_user_id", ["user_id"])
 
 
 def _execute_ddl(statement: str) -> None:

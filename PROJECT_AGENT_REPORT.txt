@@ -1,5 +1,5 @@
 MY FINANCE BUDDY - AGENT HANDOFF REPORT
-Generated: 2026-03-25
+Generated: 2026-03-26
 Project root: D:\my-finance-buddy
 
 ============================================================
@@ -12,7 +12,7 @@ Project type:
 
 Primary architecture:
 - Hybrid pipeline: Rule-based parsing/categorization first, LLM fallback only for uncertain rows.
-- Backend: FastAPI + SQLAlchemy + PDF parsing + Chroma vector index + OpenRouter API.
+- Backend: FastAPI + SQLAlchemy + PDF parsing + Chroma vector index + Groq-compatible chat API.
 - Frontend: React + Tailwind + Recharts + Axios.
 
 Core objective:
@@ -39,7 +39,7 @@ Backend key folders:
 
 Frontend key folders:
 - frontend/src/pages/      Dashboard, transactions, chatbot, auth screens.
-- frontend/src/components/ Shared UI widgets, chart grid, table, status card.
+- frontend/src/components/ Shared UI widgets, chart grid, bank/non-bank tables, status card.
 - frontend/src/context/    Auth context/session state.
 - frontend/src/services/   API client and endpoint wrappers.
 
@@ -80,6 +80,9 @@ Persistent entities:
 - transactions
   - statement_id, transaction_date, merchant, amount, transaction_type
   - category, description, raw_text, parser_confidence, created_at
+- non_banking_transactions
+  - user_id, transaction_date, beneficiary, amount, transaction_type
+  - category, description, created_at
 
 Ownership boundary:
 - All major data reads/writes are scoped to authenticated user_id.
@@ -102,6 +105,7 @@ Statement + dashboard:
 - POST /upload-statement
 - GET /dashboard
 - GET /transactions
+- POST /non-banking-transactions
 - GET /supported-banks
 - PATCH /update-transaction-type
 - PATCH /update-transaction-category
@@ -168,47 +172,54 @@ Failure behavior:
   - App still works using deterministic logic.
 
 ============================================================
-8) OPENROUTER USAGE AND MODEL-TO-AGENT MAPPING
+8) GROQ USAGE AND MODEL-TO-AGENT MAPPING
 ============================================================
 Provider:
-- OpenRouter API via backend/services/openrouter_client.py
-- Base URL: OPENROUTER_BASE_URL (default https://openrouter.ai/api/v1)
+- Groq-compatible API via backend/services/groq_client.py
+- Base URL: https://api.groq.com/openai/v1
 
-OpenRouter endpoints used:
+Groq endpoints used:
 - POST /chat/completions
-- POST /embeddings
 
 Configured models in CURRENT backend/.env:
-- AGENT_ONE_MODEL=openai/gpt-oss-20b
-- AGENT_TWO_MODEL=arcee-ai/trinity-mini
-- AGENT_THREE_MODEL=openai/gpt-oss-20b
+- AGENT_ONE_MODEL=groq/compound
+- AGENT_TWO_MODEL=groq/compound
+- AGENT_THREE_MODEL=openai/gpt-oss-120b
 - EMBEDDING_MODEL=nomic-embed-text
+
+Configured API keys in CURRENT backend/.env:
+- AGENT_ONE_API_KEY
+- AGENT_TWO_API_KEY
+- AGENT_THREE_API_KEY
 
 Agent responsibilities:
 - Agent 1 (enrich_transactions):
   - Purpose: convert ambiguous raw statement rows into strict JSON objects.
   - Called only for low-confidence parser rows.
-  - Fallback order in code: AGENT_ONE_MODEL -> AGENT_TWO_MODEL -> AGENT_THREE_MODEL.
+  - Uses dedicated GroqClient instance with AGENT_ONE_API_KEY.
+  - Includes strict JSON retry if the first response is not parseable JSON.
 - Agent 2 (categorize_batch):
   - Purpose: classify unresolved transaction descriptions into fixed category list.
   - Called only for unresolved items after all deterministic checks.
-  - Fallback order in code: AGENT_TWO_MODEL -> AGENT_THREE_MODEL.
+  - Uses dedicated GroqClient instance with AGENT_TWO_API_KEY.
 - Agent 3 (summarize_anomalies and chat):
   - Purpose: dashboard AI insight bullets and chatbot response generation.
+  - Uses dedicated GroqClient instance with AGENT_THREE_API_KEY.
   - Used for:
     - summarize_anomalies (insight bullets)
     - /chat in both rag and general modes
 
 Embedding behavior:
-- If OpenRouter key exists:
-  - Uses OpenRouter embeddings model mapping.
-  - Alias in code: "nomic-embed-text" -> "nomic-ai/nomic-embed-text-v1.5".
-- If key missing/fails:
-  - Uses local deterministic hashed semantic embedding fallback.
+- Current RAG embedding path is local deterministic hashed semantic embedding fallback.
+- No external embedding provider is required for the current code path.
 
 Rate-limit handling:
-- OpenRouterClient normalizes quota/limit errors to:
+- GroqClient normalizes quota/limit errors to:
   - "API call limit reached, change the api key."
+
+Operational note:
+- OpenRouter has been removed from live source usage.
+- backend/services/openrouter_client.py is deleted.
 
 ============================================================
 9) RAG AND CHAT DESIGN
@@ -222,10 +233,12 @@ Core files:
 Index rebuild trigger points:
 - After successful statement upload.
 - After transaction type/category update.
+- After non-banking transaction creation.
 - Index clear on reset-data.
 
 Indexed chunk families:
 - transaction records
+- non-banking transaction records
 - monthly transaction windows
 - merchant summaries
 - category summaries
@@ -256,11 +269,26 @@ Dashboard state:
 - Summary dashboard cached in sessionStorage.
 - Transactions page cached separately in sessionStorage.
 - Upload page simulates staged progress UX while backend processes.
+- Transactions page also caches manual/non-banking transaction records.
 
 Transactions editor:
 - Supports type correction when type=="unknown".
 - Supports category override.
 - Category update applies to "similar descriptions" server-side.
+- Includes a manual entry form for cash/offline transactions.
+- Manual entry requires date, beneficiary, type, category, and amount; description is optional.
+- Renders a dedicated "Non-Banking Transactions" table below the bank-transactions table.
+- Transaction table now includes a synchronized top horizontal scrollbar for better UX on wide tables.
+
+Header/layout UX:
+- Dashboard, Transactions, and Finance AI Assistant pages were refactored to use a cleaner header pattern:
+  - top info row with badge + username,
+  - centered title/description,
+  - separate action button row.
+- Dashboard action area includes:
+  - Upload Redacted PDF
+  - Redact PDF
+  - Unlock Locked PDF
 
 Frontend API integration:
 - Axios interceptor injects Bearer token automatically.
@@ -270,8 +298,8 @@ Frontend API integration:
 11) CONFIG FLAGS WITH BEHAVIOR IMPACT
 ============================================================
 Critical flags:
-- OPENROUTER_API_KEY:
-  - Empty => no external LLM calls; local fallback behavior.
+- AGENT_ONE_API_KEY / AGENT_TWO_API_KEY / AGENT_THREE_API_KEY:
+  - Missing key for an agent disables that agent's external LLM calls and falls back safely.
 - LLM_CONFIDENCE_THRESHOLD:
   - Lower means fewer rows sent to Agent 1.
   - Higher means more LLM enrichment calls.
@@ -295,6 +323,8 @@ Observed dead/legacy paths:
 Risk areas:
 - Category override updates all user transactions matching normalized description signature.
   - Powerful for consistency, but can over-apply if signature normalization is too broad.
+- Non-banking transactions use a separate table/model from bank-ingested transactions.
+  - This is intentional for provenance, but any future unified-edit feature must account for both models.
 - Parser heuristics are bank-format dependent.
   - New bank support should add extractor profile + tests.
 - Root repo currently appears uncommitted/untracked.
@@ -309,6 +339,7 @@ Existing tests:
 
 Missing test coverage (recommended additions):
 - API integration tests (auth + upload + dashboard + chat).
+- API tests for POST /non-banking-transactions and summary/chart aggregation with manual records.
 - DB migration/backward compatibility tests.
 - Category override behavior tests for false-positive grouping.
 - RAG retrieval regression tests.
@@ -338,6 +369,7 @@ When changing chat/RAG:
 When changing frontend:
 9. Keep payload contracts aligned with backend build_dashboard_payload output.
 10. Maintain auth token flow and 401 handling.
+11. Transactions page depends on both transactions and nonBankTransactions arrays in the payload.
 
 ============================================================
 15) QUICK FILE MAP FOR MOST IMPORTANT LOGIC
@@ -345,6 +377,7 @@ When changing frontend:
 Core backend:
 - backend/main.py
 - backend/services/statement_service.py
+- backend/services/groq_client.py
 - backend/services/pdf_extractor.py
 - backend/services/parsing.py
 - backend/services/categorizer.py
@@ -363,6 +396,7 @@ Core frontend:
 - frontend/src/pages/TransactionsPage.js
 - frontend/src/pages/ChatbotPage.js
 - frontend/src/components/TransactionTable.js
+- frontend/src/components/NonBankingTransactionTable.js
 - frontend/src/components/ChartsGrid.js
 
 ============================================================
@@ -372,11 +406,12 @@ This codebase is a good practical hybrid AI system:
 - deterministic processing for reliability,
 - LLM fallback for ambiguity,
 - retrieval-augmented chat for user questions,
-- clear user-scoped data boundaries.
+- clear user-scoped data boundaries,
+- support for both bank-ingested and manual/offline finance records.
 
 For best stability:
 - keep rules as primary source of truth,
 - treat LLM outputs as assistive,
 - expand tests before broad refactors,
+- keep manual transaction payloads and dashboard aggregations in sync,
 - remove or rewire dead modules to reduce confusion for future agents.
-

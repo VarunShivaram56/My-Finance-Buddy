@@ -5,7 +5,7 @@ USE my_finance_buddy;
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    user_id VARCHAR(64) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     password_salt VARCHAR(255) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -55,4 +55,21 @@ CREATE TABLE IF NOT EXISTS non_banking_transactions (
     description TEXT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_non_banking_transaction_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS loans (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    loan_name VARCHAR(255) NOT NULL,
+    lender VARCHAR(255) NOT NULL,
+    principal_amount DOUBLE NOT NULL,
+    interest_rate DOUBLE NOT NULL,
+    tenure_months INT NOT NULL,
+    emi_amount DOUBLE NOT NULL DEFAULT 0,
+    start_date DATE NOT NULL,
+    total_paid DOUBLE NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    notes TEXT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_loan_user FOREIGN KEY (user_id) REFERENCES users(id)
 );

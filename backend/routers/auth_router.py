@@ -11,12 +11,12 @@ from services.auth_service import AuthService
 
 class RegisterPayload(BaseModel):
     name: str = Field(min_length=2, max_length=120)
-    email: str
+    user_id: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=6, max_length=128)
 
 
 class LoginPayload(BaseModel):
-    email: str
+    user_id: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=6, max_length=128)
 
 
@@ -44,17 +44,17 @@ def _extract_bearer_token(authorization: str | None, required: bool = True) -> s
 
 @router.post("/register")
 def register(payload: RegisterPayload, db: Session = Depends(get_db)) -> dict:
-    return auth_service.register(db, payload.name, payload.email, payload.password)
+    return auth_service.register(db, payload.name, payload.user_id, payload.password)
 
 
 @router.post("/login")
 def login(payload: LoginPayload, db: Session = Depends(get_db)) -> dict:
-    return auth_service.login(db, payload.email, payload.password)
+    return auth_service.login(db, payload.user_id, payload.password)
 
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)) -> dict:
-    return {"user": {"id": current_user.id, "name": current_user.name, "email": current_user.email}}
+    return {"user": {"id": current_user.id, "name": current_user.name, "user_id": current_user.user_id}}
 
 
 @router.post("/logout")

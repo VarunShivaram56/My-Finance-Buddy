@@ -15,6 +15,8 @@ DATE_PATTERNS = (
     "%d %b %Y",
     "%d %b %y",
     "%d %B %Y",
+    "%d-%m-%y",
+    "%d/%m/%Y",
 )
 AMOUNT_PATTERN = re.compile(r"[-+]?\d[\d,]*\.\d{2}")
 
@@ -90,11 +92,18 @@ def _parse_amounts(text: str) -> list[float]:
 
 def _parse_type(text: str, amount: float | None) -> str | None:
     lowered = text.lower()
-    if any(keyword in lowered for keyword in [" cr", "credit", "deposit", "salary", "refund", "interest", "upi/cr"]):
+    if any(keyword in lowered for keyword in [
+        " cr", "credit", "deposit", "salary", "refund", "interest", "upi/cr",
+        "neft cr", "rtgs cr", "imps cr", "inward", "credited", "cashback",
+    ]):
         return "credit"
     if any(
         keyword in lowered
-        for keyword in [" dr", "debit", "withdrawal", "purchase", "upi", "cwdr", "atm", "pos", "card", "wdl tfr", "upi/dr"]
+        for keyword in [
+            " dr", "debit", "withdrawal", "purchase", "upi", "cwdr", "atm", "pos", "card",
+            "wdl tfr", "upi/dr", "neft dr", "rtgs dr", "imps dr", "ecom", "nfs",
+            "nfs-cwdr", "ach d", "nach", "ecs", "si-", "auto debit",
+        ]
     ):
         return "debit"
     return "unknown" if amount is not None else None
@@ -120,6 +129,10 @@ def _parse_merchant(text: str, date: str | None, amount: float | None) -> str | 
     upi_candidate = _extract_upi_counterparty(working)
     if upi_candidate:
         return upi_candidate
+
+    neft_candidate = _extract_neft_rtgs_beneficiary(working)
+    if neft_candidate:
+        return neft_candidate
 
     parenthetical_matches = re.findall(r"\(([A-Za-z][A-Za-z .&-]{2,})\)?", working)
     if parenthetical_matches:
@@ -150,11 +163,27 @@ def _extract_upi_counterparty(text: str) -> str | None:
 
     candidate = match.group(1)
     candidate = re.sub(r"[^A-Za-z\s.&-]", " ", candidate)
-    candidate = re.sub(r"\b(?:sbin|cnrb|ptyes|ptybi|oksbi|ybl|yesb|utib)\b", " ", candidate, flags=re.I)
+    candidate = re.sub(r"\b(?:sbin|cnrb|ptyes|ptybi|oksbi|ybl|yesb|utib|ioba|bkid|hdfc|icic|kkbk|punb)\b", " ", candidate, flags=re.I)
     candidate = re.sub(r"\s+", " ", candidate).strip(" -:/")
     if len(candidate) < 2:
         return None
     return candidate[:255]
+
+
+def _extract_neft_rtgs_beneficiary(text: str) -> str | None:
+    """Extract beneficiary from NEFT/RTGS/IMPS narration patterns."""
+    for pattern in [
+        r"(?:neft|rtgs|imps)[-/\s]*(?:dr|cr)?[-/\s]*(?:\d+[-/\s]*)*/([^/|]+)",
+        r"(?:neft|rtgs|imps)\s+(?:to|from)\s+([A-Za-z][A-Za-z .'&-]{2,})",
+    ]:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            candidate = match.group(1).strip()
+            candidate = re.sub(r"\b\d{6,}\b", " ", candidate)
+            candidate = re.sub(r"\s+", " ", candidate).strip(" -:/")
+            if len(candidate) >= 2 and _looks_like_merchant_text(candidate):
+                return candidate[:255]
+    return None
 
 
 def _looks_like_merchant_text(text: str) -> bool:

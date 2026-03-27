@@ -88,6 +88,27 @@ export const logoutUser = async () => {
   return response.data;
 };
 
+// Loans API
+export const fetchLoans = async () => {
+  const response = await api.get("/loans");
+  return response.data;
+};
+
+export const createLoan = async (payload) => {
+  const response = await api.post("/loans", payload);
+  return response.data;
+};
+
+export const updateLoan = async (loanId, payload) => {
+  const response = await api.patch(`/loans/${loanId}`, payload);
+  return response.data;
+};
+
+export const deleteLoan = async (loanId) => {
+  const response = await api.delete(`/loans/${loanId}`);
+  return response.data;
+};
+
 export default api;
 
 export const getFriendlyApiError = (error, fallbackMessage) => {

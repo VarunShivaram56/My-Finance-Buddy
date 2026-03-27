@@ -105,22 +105,24 @@ class TransactionCategorizer:
 
         keyword_groups = {
             "Housing & Rent": ["rent", "maintenance", "society", "apartment", "property tax", "home loan"],
-            "Food & Dining": ["rotti", "pizza", "restaurant", "cafe", "snack", "dining", "food"],
-            "Groceries & Essentials": ["supermarket", "grocery", "milk", "vegetable", "mart", "essentials"],
-            "Transportation": ["fuel", "petrol", "diesel", "metro", "train", "bus", "auto", "cab"],
-            "Shopping & Lifestyle": ["shopping", "lifestyle", "fashion", "electronics", "shoppers", "store"],
-            "Entertainment & Subscriptions": ["subscription", "movie", "gaming", "music", "premium"],
-            "Utilities & Bills": ["bill", "electric", "water", "internet", "mobile", "broadband", "recharge", "gas"],
-            "Healthcare": ["doctor", "medical", "medicine", "pharmacy", "clinic", "hospital", "lab"],
-            "Education": ["course", "tuition", "fees", "school", "college", "book", "exam"],
-            "Financial & Investments": ["sip", "mutual", "stock", "demat", "investment", "credit card", "emi", "loan"],
-            "Income": ["salary", "interest", "refund", "cashback", "dividend", "credited by", "inward"],
+            "Food & Dining": ["rotti", "pizza", "restaurant", "cafe", "snack", "dining", "food", "bakery", "biryani", "eat"],
+            "Groceries & Essentials": ["supermarket", "grocery", "milk", "vegetable", "mart", "essentials", "provision"],
+            "Transportation": ["fuel", "petrol", "diesel", "metro", "train", "bus", "auto", "cab", "toll", "parking", "fastag"],
+            "Shopping & Lifestyle": ["shopping", "lifestyle", "fashion", "electronics", "shoppers", "store", "mall"],
+            "Entertainment & Subscriptions": ["subscription", "movie", "gaming", "music", "premium", "cinema", "theatre"],
+            "Utilities & Bills": ["bill", "electric", "water", "internet", "mobile", "broadband", "recharge", "gas", "postpaid", "prepaid"],
+            "Healthcare": ["doctor", "medical", "medicine", "pharmacy", "clinic", "hospital", "lab", "diagnostic", "dental", "health"],
+            "Education": ["course", "tuition", "fees", "school", "college", "book", "exam", "coaching", "tutorial"],
+            "Financial & Investments": ["sip", "mutual", "stock", "demat", "investment", "credit card", "emi", "loan", "nps", "ppf", "fd"],
+            "Income": ["salary", "interest", "refund", "cashback", "dividend", "credited by", "inward", "bonus", "commission"],
+            "Insurance & Protection": ["insurance", "lic", "premium", "policy", "health cover", "term plan", "endowment"],
+            "Travel": ["flight", "airline", "hotel", "booking", "travel", "trip", "tourism", "resort"],
         }
         for category, keywords in keyword_groups.items():
             if any(keyword in normalized for keyword in keywords):
                 return category
 
-        if transaction_type == "credit" and any(keyword in normalized for keyword in ["salary", "refund", "interest", "cashback"]):
+        if transaction_type == "credit" and any(keyword in normalized for keyword in ["salary", "refund", "interest", "cashback", "bonus"]):
             return "Income"
 
         return None

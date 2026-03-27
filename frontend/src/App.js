@@ -5,6 +5,7 @@ import { useAuth } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import ChatbotPage from "./pages/ChatbotPage";
 import FinanceDashboardPage from "./pages/FinanceDashboardPage";
+import LoansPage from "./pages/LoansPage";
 import TransactionsPage from "./pages/TransactionsPage";
 
 function App() {
@@ -35,6 +36,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TransactionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/loans"
+          element={
+            <ProtectedRoute>
+              <LoansPage />
             </ProtectedRoute>
           }
         />

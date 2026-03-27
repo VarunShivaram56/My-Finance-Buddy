@@ -11,7 +11,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     password_salt: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -24,6 +24,9 @@ class User(Base):
     )
     non_banking_transactions: Mapped[list["NonBankingTransaction"]] = relationship(
         "NonBankingTransaction", back_populates="user", cascade="all, delete-orphan"
+    )
+    loans: Mapped[list["Loan"]] = relationship(
+        "Loan", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -86,3 +89,23 @@ class NonBankingTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="non_banking_transactions")
+
+
+class Loan(Base):
+    __tablename__ = "loans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    loan_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lender: Mapped[str] = mapped_column(String(255), nullable=False)
+    principal_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    interest_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    tenure_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    emi_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    start_date: Mapped[str] = mapped_column(Date, nullable=False)
+    total_paid: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship("User", back_populates="loans")

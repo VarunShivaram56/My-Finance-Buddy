@@ -68,12 +68,12 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated: Boolean(user && token),
       async login(payload) {
-        const response = await loginUser(payload);
+        const response = await loginUser({ user_id: payload.user_id, password: payload.password });
         handleAuthSuccess(response);
         return response;
       },
       async register(payload) {
-        const response = await registerUser(payload);
+        const response = await registerUser({ name: payload.name, user_id: payload.user_id, password: payload.password });
         handleAuthSuccess(response);
         return response;
       },

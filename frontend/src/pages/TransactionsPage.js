@@ -28,6 +28,7 @@ function TransactionsPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [updatingTransactionId, setUpdatingTransactionId] = useState(null);
   const [creatingManualTransaction, setCreatingManualTransaction] = useState(false);
+  const [activeTab, setActiveTab] = useState("banking");
   const [manualTransactionForm, setManualTransactionForm] = useState({
     transactionDate: "",
     beneficiary: "",
@@ -171,6 +172,12 @@ function TransactionsPage() {
                 Back to Dashboard
               </Link>
               <Link
+                to="/loans"
+                className="inline-flex min-w-[200px] items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
+              >
+                Loans & Liabilities
+              </Link>
+              <Link
                 to="/chatbot"
                 className="inline-flex min-w-[230px] items-center justify-center rounded-2xl bg-ink px-6 py-3 text-sm font-semibold text-white transition hover:bg-clay"
               >
@@ -200,131 +207,160 @@ function TransactionsPage() {
         </section>
 
         <section className="mt-10 pb-8">
-          <div className="mb-8 rounded-3xl bg-white/90 p-6 shadow-soft ring-1 ring-borderSoft">
-            <div className="flex flex-col gap-3">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
-                  Add Cash or Offline Transaction
-                </p>
-                <p className="mt-2 text-sm leading-7 text-slate-600">
-                  Add a transaction that did not appear in your bank statement, such as cash spending or cash income.
-                </p>
-              </div>
+          {/* Tab Toggle */}
+          <div className="mb-8 flex gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab("banking")}
+              className={`rounded-2xl px-6 py-3 text-sm font-semibold transition ${
+                activeTab === "banking"
+                  ? "bg-ink text-white shadow-soft"
+                  : "bg-white text-ink shadow-soft ring-1 ring-borderSoft hover:bg-[#fff4e6]"
+              }`}
+            >
+              Banking Transactions ({dashboard.transactions?.length || 0})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("nonBanking")}
+              className={`rounded-2xl px-6 py-3 text-sm font-semibold transition ${
+                activeTab === "nonBanking"
+                  ? "bg-ink text-white shadow-soft"
+                  : "bg-white text-ink shadow-soft ring-1 ring-borderSoft hover:bg-[#fff4e6]"
+              }`}
+            >
+              Non-Banking ({(dashboard.nonBankTransactions || []).length})
+            </button>
+          </div>
 
-              <form onSubmit={handleManualTransactionSubmit} className="rounded-3xl bg-[#fffaf4] p-5 ring-1 ring-[#f4ddc2]">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
-                <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
-                  <span className="font-medium text-ink">Date</span>
-                  <input
-                    type="date"
-                    value={manualTransactionForm.transactionDate}
-                    onChange={(event) =>
-                      setManualTransactionForm((current) => ({ ...current, transactionDate: event.target.value }))
-                    }
-                    className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                    required
-                  />
-                </label>
-
-                <label className="grid gap-2 text-sm text-slate-600 xl:col-span-3">
-                  <span className="font-medium text-ink">Beneficiary</span>
-                  <input
-                    value={manualTransactionForm.beneficiary}
-                    onChange={(event) =>
-                      setManualTransactionForm((current) => ({ ...current, beneficiary: event.target.value }))
-                    }
-                    placeholder="Name of beneficiary"
-                    className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                    required
-                  />
-                </label>
-
-                <label className="grid gap-2 text-sm text-slate-600 xl:col-span-3">
-                  <span className="font-medium text-ink">Description</span>
-                  <input
-                    value={manualTransactionForm.description}
-                    onChange={(event) =>
-                      setManualTransactionForm((current) => ({ ...current, description: event.target.value }))
-                    }
-                    placeholder="Optional description"
-                    className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                  />
-                </label>
-
-                <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
-                  <span className="font-medium text-ink">Type</span>
-                  <select
-                    value={manualTransactionForm.transactionType}
-                    onChange={(event) =>
-                      setManualTransactionForm((current) => ({ ...current, transactionType: event.target.value }))
-                    }
-                    className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                  >
-                    <option value="debit">Debit</option>
-                    <option value="credit">Credit</option>
-                  </select>
-                </label>
-
-                <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
-                  <span className="font-medium text-ink">Category</span>
-                  <select
-                    value={manualTransactionForm.category}
-                    onChange={(event) =>
-                      setManualTransactionForm((current) => ({ ...current, category: event.target.value }))
-                    }
-                    className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                  >
-                    {(dashboard.availableCategories || []).map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                </div>
-
-                <div className="mt-5 flex flex-col gap-4 border-t border-[#f1dfcc] pt-5 sm:flex-row sm:items-end sm:justify-between">
-                  <label className="grid gap-2 text-sm text-slate-600 sm:min-w-[240px]">
-                    <span className="font-medium text-ink">Amount</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={manualTransactionForm.amount}
-                      onChange={(event) =>
-                        setManualTransactionForm((current) => ({ ...current, amount: event.target.value }))
-                      }
-                      placeholder="0.00"
-                      className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
-                      required
-                    />
-                  </label>
-
-                  <div className="flex flex-col gap-2 sm:items-end">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#c58b58]">Manual entry</p>
-                    <button
-                      type="submit"
-                      disabled={creatingManualTransaction}
-                      className="rounded-2xl bg-ink px-8 py-3 text-sm font-semibold text-white transition hover:bg-clay disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {creatingManualTransaction ? "Adding..." : "Add Transaction"}
-                    </button>
+          {/* Non-Banking: Add Form + Table */}
+          {activeTab === "nonBanking" ? (
+            <>
+              <div className="mb-8 rounded-3xl bg-white/90 p-6 shadow-soft ring-1 ring-borderSoft">
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
+                      Add Cash or Offline Transaction
+                    </p>
+                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                      Add a transaction that did not appear in your bank statement, such as cash spending or cash income.
+                    </p>
                   </div>
-                </div>
-              </form>
-            </div>
-          </div>
 
-          <TransactionTable
-            transactions={dashboard.transactions}
-            categories={dashboard.availableCategories || []}
-            onTypeChange={handleTypeChange}
-            onCategoryChange={handleCategoryChange}
-            updatingId={updatingTransactionId}
-          />
-          <div className="mt-8">
-            <NonBankingTransactionTable transactions={dashboard.nonBankTransactions || []} />
-          </div>
+                  <form onSubmit={handleManualTransactionSubmit} className="rounded-3xl bg-[#fffaf4] p-5 ring-1 ring-[#f4ddc2]">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
+                    <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
+                      <span className="font-medium text-ink">Date</span>
+                      <input
+                        type="date"
+                        value={manualTransactionForm.transactionDate}
+                        onChange={(event) =>
+                          setManualTransactionForm((current) => ({ ...current, transactionDate: event.target.value }))
+                        }
+                        className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                        required
+                      />
+                    </label>
+
+                    <label className="grid gap-2 text-sm text-slate-600 xl:col-span-3">
+                      <span className="font-medium text-ink">Beneficiary</span>
+                      <input
+                        value={manualTransactionForm.beneficiary}
+                        onChange={(event) =>
+                          setManualTransactionForm((current) => ({ ...current, beneficiary: event.target.value }))
+                        }
+                        placeholder="Name of beneficiary"
+                        className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                        required
+                      />
+                    </label>
+
+                    <label className="grid gap-2 text-sm text-slate-600 xl:col-span-3">
+                      <span className="font-medium text-ink">Description</span>
+                      <input
+                        value={manualTransactionForm.description}
+                        onChange={(event) =>
+                          setManualTransactionForm((current) => ({ ...current, description: event.target.value }))
+                        }
+                        placeholder="Optional description"
+                        className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                      />
+                    </label>
+
+                    <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
+                      <span className="font-medium text-ink">Type</span>
+                      <select
+                        value={manualTransactionForm.transactionType}
+                        onChange={(event) =>
+                          setManualTransactionForm((current) => ({ ...current, transactionType: event.target.value }))
+                        }
+                        className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                      >
+                        <option value="debit">Debit</option>
+                        <option value="credit">Credit</option>
+                      </select>
+                    </label>
+
+                    <label className="grid gap-2 text-sm text-slate-600 xl:col-span-2">
+                      <span className="font-medium text-ink">Category</span>
+                      <select
+                        value={manualTransactionForm.category}
+                        onChange={(event) =>
+                          setManualTransactionForm((current) => ({ ...current, category: event.target.value }))
+                        }
+                        className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                      >
+                        {(dashboard.availableCategories || []).map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    </div>
+
+                    <div className="mt-5 flex flex-col gap-4 border-t border-[#f1dfcc] pt-5 sm:flex-row sm:items-end sm:justify-between">
+                      <label className="grid gap-2 text-sm text-slate-600 sm:min-w-[240px]">
+                        <span className="font-medium text-ink">Amount</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={manualTransactionForm.amount}
+                          onChange={(event) =>
+                            setManualTransactionForm((current) => ({ ...current, amount: event.target.value }))
+                          }
+                          placeholder="0.00"
+                          className="rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                          required
+                        />
+                      </label>
+
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#c58b58]">Manual entry</p>
+                        <button
+                          type="submit"
+                          disabled={creatingManualTransaction}
+                          className="rounded-2xl bg-ink px-8 py-3 text-sm font-semibold text-white transition hover:bg-clay disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {creatingManualTransaction ? "Adding..." : "Add Transaction"}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+              <NonBankingTransactionTable transactions={dashboard.nonBankTransactions || []} />
+            </>
+          ) : (
+            <TransactionTable
+              transactions={dashboard.transactions}
+              categories={dashboard.availableCategories || []}
+              onTypeChange={handleTypeChange}
+              onCategoryChange={handleCategoryChange}
+              updatingId={updatingTransactionId}
+            />
+          )}
         </section>
       </div>
     </div>

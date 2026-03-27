@@ -457,6 +457,13 @@ def _looks_like_ledger_header(lowered: str) -> bool:
             "value date",
             "closing balance",
             "withdrawal deposit",
+            "particulars",
+            "instrument no",
+            "branch name",
+            "account no",
+            "customer id",
+            "statement summary",
+            "page no",
         ]
     )
 
@@ -471,6 +478,12 @@ def _is_non_transaction_line(lowered: str) -> bool:
             "account number",
             "statement period",
             "generated on",
+            "printed on",
+            "this is a computer",
+            "disclaimer",
+            "total:",
+            "grand total",
+            "nominee",
         ]
     )
 
@@ -529,6 +542,8 @@ def _detail_text_from_block(block: list[list[str]]) -> str:
 
     text = " ".join(details)
     text = re.sub(r"\bChq:\s*\d+\b", "", text, flags=re.I)
+    text = re.sub(r"\bInst(?:rument)?\s*(?:No\.?)?\s*\d+\b", "", text, flags=re.I)
+    text = re.sub(r"\b\d{12,}\b", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -557,8 +572,15 @@ def _has_meaningful_rows(rows: list[list[str]]) -> bool:
 
 def _infer_type_from_text(text: str) -> str:
     lowered = text.lower()
-    if any(keyword in lowered for keyword in [" cr", "credit", "deposit", "refund", "salary", "interest", "upi/cr"]):
+    if any(keyword in lowered for keyword in [
+        " cr", "credit", "deposit", "refund", "salary", "interest", "upi/cr",
+        "neft cr", "rtgs cr", "imps cr", "inward", "credited", "cashback",
+    ]):
         return "credit"
-    if any(keyword in lowered for keyword in [" dr", "debit", "withdrawal", "purchase", "upi", "atm", "wdl tfr", "upi/dr"]):
+    if any(keyword in lowered for keyword in [
+        " dr", "debit", "withdrawal", "purchase", "upi", "atm", "wdl tfr", "upi/dr",
+        "neft dr", "rtgs dr", "imps dr", "pos", "ecom", "nfs", "cwdr", "nfs-cwdr",
+        "ach d", "nach", "ecs", "si-", "auto debit", "card",
+    ]):
         return "debit"
     return "unknown"

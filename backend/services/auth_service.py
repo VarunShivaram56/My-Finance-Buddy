@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from sqlalchemy.orm import Session
 
 from fastapi import HTTPException
@@ -8,20 +10,26 @@ from database.models import User, UserSession
 from services.auth_utils import create_session_token, generate_password_salt, hash_password, hash_session_token, verify_password
 
 
+_USER_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]{3,64}$")
+
+
 class AuthService:
-    def register(self, db: Session, name: str, email: str, password: str) -> dict:
-        normalized_email = email.strip().lower()
-        if "@" not in normalized_email or "." not in normalized_email:
-            raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    def register(self, db: Session, name: str, user_id: str, password: str) -> dict:
+        clean_user_id = user_id.strip()
+        if not _USER_ID_PATTERN.match(clean_user_id):
+            raise HTTPException(
+                status_code=400,
+                detail="User ID must be 3-64 characters long and contain only letters, numbers, or underscores.",
+            )
         if len(name.strip()) < 2:
             raise HTTPException(status_code=400, detail="Name must be at least 2 characters long.")
-        if db.query(User).filter(User.email == normalized_email).first():
-            raise HTTPException(status_code=400, detail="An account with this email already exists.")
+        if db.query(User).filter(User.user_id == clean_user_id).first():
+            raise HTTPException(status_code=400, detail="This user ID is already taken. Please choose another.")
 
         salt = generate_password_salt()
         user = User(
             name=name.strip(),
-            email=normalized_email,
+            user_id=clean_user_id,
             password_hash=hash_password(password, salt),
             password_salt=salt,
         )
@@ -32,11 +40,11 @@ class AuthService:
         token = self._create_session(db, user)
         return {"token": token, "user": _serialize_user(user)}
 
-    def login(self, db: Session, email: str, password: str) -> dict:
-        normalized_email = email.strip().lower()
-        user = db.query(User).filter(User.email == normalized_email).first()
+    def login(self, db: Session, user_id: str, password: str) -> dict:
+        clean_user_id = user_id.strip()
+        user = db.query(User).filter(User.user_id == clean_user_id).first()
         if not user or not verify_password(password, user.password_salt, user.password_hash):
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
+            raise HTTPException(status_code=401, detail="Invalid user ID or password.")
 
         token = self._create_session(db, user)
         return {"token": token, "user": _serialize_user(user)}
@@ -67,4 +75,4 @@ class AuthService:
 
 
 def _serialize_user(user: User) -> dict[str, str | int]:
-    return {"id": user.id, "name": user.name, "email": user.email}
+    return {"id": user.id, "name": user.name, "user_id": user.user_id}

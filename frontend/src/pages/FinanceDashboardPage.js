@@ -19,12 +19,18 @@ const EMPTY_DASHBOARD = {
     totalSpending: 0,
     transactionsCount: 0,
     averageDailySpend: 0,
-    savingsEstimate: 0,
+    totalIncome: 0,
+    highestSingleSpend: { amount: 0, merchant: "—" },
+    uniqueMerchantCount: 0,
   },
   monthlySpending: [],
   categoryBreakdown: [],
   dailySpending: [],
   topMerchants: [],
+  creditVsDebit: [],
+  weekdaySpending: [],
+  topCategories: [],
+  recurringMerchants: [],
   transactions: [],
   insights: "",
   supportedBanks: [],
@@ -239,6 +245,12 @@ function FinanceDashboardPage() {
                 Manage Transactions
               </Link>
               <Link
+                to="/loans"
+                className="inline-flex min-w-[200px] items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-ink shadow-soft ring-1 ring-borderSoft transition hover:bg-[#fff4e6]"
+              >
+                Loans & Liabilities
+              </Link>
+              <Link
                 to="/chatbot"
                 className="inline-flex min-w-[230px] items-center justify-center rounded-2xl bg-ink px-6 py-3 text-sm font-semibold text-white transition hover:bg-clay"
               >
@@ -312,11 +324,16 @@ function FinanceDashboardPage() {
           </div>
         </section>
 
-        <section className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           <SummaryCard
             label="Total Spending"
-            value={`Rs ${dashboard.summary.totalSpending.toFixed(2)}`}
+            value={`₹${dashboard.summary.totalSpending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             hint="Total debit transactions"
+          />
+          <SummaryCard
+            label="Total Income"
+            value={`₹${dashboard.summary.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            hint="Total credit transactions"
           />
           <SummaryCard
             label="Transactions Count"
@@ -325,13 +342,18 @@ function FinanceDashboardPage() {
           />
           <SummaryCard
             label="Average Daily Spend"
-            value={`Rs ${dashboard.summary.averageDailySpend.toFixed(2)}`}
+            value={`₹${dashboard.summary.averageDailySpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             hint="Across active spending days"
           />
           <SummaryCard
-            label="Savings Estimate"
-            value={`Rs ${dashboard.summary.savingsEstimate.toFixed(2)}`}
-            hint="Credits minus debits"
+            label="Highest Single Spend"
+            value={`₹${(dashboard.summary.highestSingleSpend?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            hint={dashboard.summary.highestSingleSpend?.merchant || "—"}
+          />
+          <SummaryCard
+            label="Unique Merchants"
+            value={dashboard.summary.uniqueMerchantCount}
+            hint="Distinct payees/merchants"
           />
         </section>
 
