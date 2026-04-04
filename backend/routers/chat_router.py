@@ -11,6 +11,7 @@ from routers.auth_router import get_current_user
 class ChatPayload(BaseModel):
     query: str
     mode: str = "rag"
+    section: str = "transactions"
 
 
 router = APIRouter()
@@ -23,4 +24,4 @@ def chat(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    return chatbot_service.answer(db, current_user, payload.query, payload.mode)
+    return chatbot_service.answer(db, current_user, payload.query, payload.mode, payload.section)

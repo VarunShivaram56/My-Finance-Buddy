@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from database.models import Loan, User
 from database.session import get_db
 from routers.auth_router import get_current_user
+from services.dashboard_cache import dashboard_cache
 
 
 class CreateLoanPayload(BaseModel):
@@ -40,9 +41,19 @@ router = APIRouter(prefix="/loans", tags=["loans"])
 
 def _serialize_loan(loan: Loan) -> dict:
     remaining = max(loan.principal_amount - loan.total_paid, 0)
-    total_interest = loan.principal_amount * (loan.interest_rate / 100) * (loan.tenure_months / 12)
-    total_payable = loan.principal_amount + total_interest
-    completion_pct = round((loan.total_paid / total_payable * 100) if total_payable > 0 else 0, 1)
+    
+    if loan.emi_amount and loan.emi_amount * loan.tenure_months >= loan.principal_amount:
+        total_payable = loan.emi_amount * loan.tenure_months
+    else:
+        r = (loan.interest_rate / 100.0) / 12.0
+        if r > 0:
+            calc_emi = loan.principal_amount * r * ((1 + r)**loan.tenure_months) / (((1 + r)**loan.tenure_months) - 1)
+            total_payable = calc_emi * loan.tenure_months
+        else:
+            total_payable = loan.principal_amount
+            
+    total_interest = max(total_payable - loan.principal_amount, 0)
+    completion_pct = min(100.0, round((loan.total_paid / total_payable * 100) if total_payable > 0 else 0, 1))
 
     months_elapsed = 0
     if loan.emi_amount > 0 and loan.total_paid > 0:
@@ -76,13 +87,23 @@ def _compute_summary(loans: list[Loan]) -> dict:
     total_principal = sum(loan.principal_amount for loan in active_loans)
     total_paid = sum(loan.total_paid for loan in active_loans)
 
-    total_interest = sum(
-        loan.principal_amount * (loan.interest_rate / 100) * (loan.tenure_months / 12)
-        for loan in active_loans
-    )
-    total_payable = total_principal + total_interest
+    total_payable = 0
+    total_interest = 0
+    for loan in active_loans:
+        if loan.emi_amount and loan.emi_amount * loan.tenure_months >= loan.principal_amount:
+            loan_payable = loan.emi_amount * loan.tenure_months
+        else:
+            r = (loan.interest_rate / 100.0) / 12.0
+            if r > 0:
+                calc_emi = loan.principal_amount * r * ((1 + r)**loan.tenure_months) / (((1 + r)**loan.tenure_months) - 1)
+                loan_payable = calc_emi * loan.tenure_months
+            else:
+                loan_payable = loan.principal_amount
+        total_payable += loan_payable
+        total_interest += max(loan_payable - loan.principal_amount, 0)
+
     avg_completion = (
-        round(total_paid / total_payable * 100, 1) if total_payable > 0 else 0
+        min(100.0, round(total_paid / total_payable * 100, 1)) if total_payable > 0 else 0
     )
 
     return {
@@ -130,6 +151,7 @@ def create_loan(
     db.commit()
     db.refresh(loan)
 
+    dashboard_cache.clear(current_user.id)
     loans = db.query(Loan).filter(Loan.user_id == current_user.id).order_by(Loan.created_at.desc()).all()
     return {
         "message": f"Loan '{loan.loan_name}' added successfully.",
@@ -155,6 +177,7 @@ def update_loan(
     db.commit()
     db.refresh(loan)
 
+    dashboard_cache.clear(current_user.id)
     loans = db.query(Loan).filter(Loan.user_id == current_user.id).order_by(Loan.created_at.desc()).all()
     return {
         "message": f"Loan '{loan.loan_name}' updated.",
@@ -177,6 +200,7 @@ def delete_loan(
     db.delete(loan)
     db.commit()
 
+    dashboard_cache.clear(current_user.id)
     loans = db.query(Loan).filter(Loan.user_id == current_user.id).order_by(Loan.created_at.desc()).all()
     return {
         "message": f"Loan '{loan_name}' has been deleted.",

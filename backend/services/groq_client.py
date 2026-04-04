@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 import httpx
+import json
 
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class GroqClient:
     def __init__(self, api_key: str, *, agent_name: str = "agent") -> None:
-        self.api_key = api_key.strip()
+        self.api_key = (api_key or "").strip()
         self.agent_name = agent_name
         self.base_url = "https://api.groq.com/openai/v1"
 
@@ -49,6 +50,7 @@ class GroqClient:
 
         for attempt in range(retries + 1):
             started_at = time.perf_counter()
+            should_retry = attempt < retries
             try:
                 response = httpx.post(
                     f"{self.base_url}{path}",
@@ -69,27 +71,55 @@ class GroqClient:
                 logger.warning("%s timeout on attempt %s/%s", self.agent_name, attempt + 1, retries + 1)
             except httpx.HTTPStatusError as exc:
                 latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
-                detail = exc.response.text.lower()
+                error_message, retryable = self._build_http_error(exc)
                 logger.warning(
-                    "%s HTTP error on attempt %s/%s after %sms: %s",
+                    "%s HTTP error on attempt %s/%s after %sms for model %s: %s",
                     self.agent_name,
                     attempt + 1,
                     retries + 1,
                     latency_ms,
+                    payload.get("model"),
                     exc.response.text,
                 )
-                if exc.response.status_code in {401, 403}:
-                    raise RuntimeError(f"{self.agent_name} authentication failed.") from exc
-                if exc.response.status_code == 429 or "limit" in detail or "quota" in detail:
-                    raise RuntimeError("API call limit reached, change the api key.") from exc
-                last_error = RuntimeError(
-                    f"{self.agent_name} request failed: {exc.response.status_code} {exc.response.text}"
-                )
+                last_error = RuntimeError(error_message)
+                should_retry = should_retry and retryable
+                if not should_retry:
+                    raise last_error from exc
             except httpx.HTTPError as exc:
                 logger.warning("%s transport error on attempt %s/%s: %s", self.agent_name, attempt + 1, retries + 1, exc)
                 last_error = RuntimeError(f"{self.agent_name} request failed.")
 
-            if attempt < retries:
+            if should_retry:
                 time.sleep(0.5 * (attempt + 1))
 
         raise last_error or RuntimeError(f"{self.agent_name} request failed.")
+
+    def _build_http_error(self, exc: httpx.HTTPStatusError) -> tuple[str, bool]:
+        status_code = exc.response.status_code
+        response_text = exc.response.text
+        detail = response_text.lower()
+        error_payload = self._parse_error_payload(response_text)
+        provider_code = str(error_payload.get("code", "")).strip().lower()
+        provider_message = str(error_payload.get("message", "")).strip()
+        normalized_detail = " ".join(
+            part for part in (provider_code, provider_message.lower(), detail) if part
+        )
+
+        if status_code in {401, 403}:
+            return f"{self.agent_name} authentication failed.", False
+        if "organization_restricted" in normalized_detail or "restricted" in normalized_detail:
+            return f"{self.agent_name} organization is restricted.", False
+        if status_code == 429 or "limit" in normalized_detail or "quota" in normalized_detail:
+            return "API call limit reached, change the api key.", False
+        if status_code < 500:
+            return f"{self.agent_name} request failed: {status_code} {response_text}", False
+        return f"{self.agent_name} request failed: {status_code} {response_text}", True
+
+    def _parse_error_payload(self, response_text: str) -> dict[str, Any]:
+        try:
+            payload = json.loads(response_text)
+        except json.JSONDecodeError:
+            return {}
+
+        error = payload.get("error")
+        return error if isinstance(error, dict) else {}

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
-const PAGE_SIZE = 20;
+const ITEMS_PER_PAGE = 10;
 
 function TransactionTable({ transactions, categories, onTypeChange, onCategoryChange, updatingId }) {
   const topScrollRef = useRef(null);
   const bottomScrollRef = useRef(null);
   const tableRef = useRef(null);
   const syncingRef = useRef(false);
+
   const [scrollWidth, setScrollWidth] = useState(0);
   const [showTopScrollbar, setShowTopScrollbar] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const updateScrollMetrics = () => {
@@ -26,11 +27,7 @@ function TransactionTable({ transactions, categories, onTypeChange, onCategoryCh
     updateScrollMetrics();
     window.addEventListener("resize", updateScrollMetrics);
     return () => window.removeEventListener("resize", updateScrollMetrics);
-  }, [transactions, categories]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [transactions]);
+  }, [transactions, categories, currentPage]);
 
   const syncHorizontalScroll = (source, target) => {
     if (!source || !target || syncingRef.current) {
@@ -44,8 +41,50 @@ function TransactionTable({ transactions, categories, onTypeChange, onCategoryCh
     });
   };
 
-  const visibleTransactions = transactions.slice(0, visibleCount);
-  const hasMore = visibleCount < transactions.length;
+  const totalPages = Math.ceil((transactions?.length || 0) / ITEMS_PER_PAGE);
+  const visibleTransactions = (transactions || []).slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const renderPaginationButtons = () => {
+    let pages = [];
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, currentPage + 2);
+
+    if (start > 1) {
+      pages.push(1);
+      if (start > 2) pages.push("...");
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (end < totalPages) {
+      if (end < totalPages - 1) pages.push("...");
+      pages.push(totalPages);
+    }
+
+    return pages.map((p, idx) => {
+      if (p === "...") {
+        return (
+          <span key={`ellipsis-${idx}`} className="flex h-8 w-8 items-center justify-center text-slate-400">
+            ...
+          </span>
+        );
+      }
+      return (
+        <button
+          key={`page-${p}`}
+          onClick={() => setCurrentPage(p)}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold ${
+            currentPage === p ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          {p}
+        </button>
+      );
+    });
+  };
 
   return (
     <div className="overflow-hidden rounded-3xl bg-white shadow-soft ring-1 ring-borderSoft">
@@ -139,17 +178,25 @@ function TransactionTable({ transactions, categories, onTypeChange, onCategoryCh
           </tbody>
         </table>
       </div>
-      {hasMore ? (
-        <div className="border-t border-slate-100 bg-[#fffaf4] px-6 py-4 text-center">
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-slate-100 bg-[#fffaf4] px-6 py-4">
           <button
-            type="button"
-            onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-            className="rounded-2xl bg-ink px-8 py-3 text-sm font-semibold text-white transition hover:bg-clay"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((p) => p - 1)}
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-ink ring-1 ring-borderSoft disabled:opacity-50"
           >
-            Show More ({transactions.length - visibleCount} remaining)
+            Previous
+          </button>
+          <div className="flex gap-2">{renderPaginationButtons()}</div>
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage((p) => p + 1)}
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-ink ring-1 ring-borderSoft disabled:opacity-50"
+          >
+            Next
           </button>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

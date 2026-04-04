@@ -1,5 +1,5 @@
 MY FINANCE BUDDY - AGENT HANDOFF REPORT
-Generated: 2026-03-26
+Generated: 2026-03-29
 Project root: D:\my-finance-buddy
 
 ============================================================
@@ -7,40 +7,42 @@ Project root: D:\my-finance-buddy
 ============================================================
 Project type:
 - Local-first AI-based personal finance assistant.
-- Input: bank statement PDF (redacted).
-- Output: parsed transactions, dashboard analytics, category tagging, AI insight bullets, finance chatbot (RAG/general).
+- Input: bank statement PDF (redacted) + manual transactions + loans/assets.
+- Output: parsed transactions, dashboard analytics, category tagging, AI insight bullets, finance chatbot (SQL-RAG + general).
 
 Primary architecture:
-- Hybrid pipeline: Rule-based parsing/categorization first, LLM fallback only for uncertain rows.
-- Backend: FastAPI + SQLAlchemy + PDF parsing + Chroma vector index + Groq-compatible chat API.
+- Hybrid pipeline: deterministic parsing/categorization first, LLM fallback only for uncertain rows.
+- Backend: FastAPI + SQLAlchemy + PDF parsing + SQL-based RAG (text-to-SQL) + Groq/OpenRouter chat clients.
 - Frontend: React + Tailwind + Recharts + Axios.
 
 Core objective:
-- Keep deterministic finance processing strong and only invoke LLM where needed.
+- Keep deterministic finance processing strong and only invoke LLMs where needed.
 
 ============================================================
 2) HIGH-LEVEL FOLDER STRUCTURE
 ============================================================
 Root:
-- backend/                 FastAPI app, business logic, models, RAG, LLM orchestration.
+- backend/                 FastAPI app, business logic, models, SQL-RAG, LLM orchestration.
 - frontend/                React app and UI components.
 - scripts/                 Dev bootstrap scripts.
-- chroma_data/             Persistent vector DB files (retrieval index).
+- chroma_data/             Legacy Chroma persistence (no longer used by active RAG).
+- groq_api_test.py         Quick Groq API smoke test.
+- open_router_api_test.py  Quick OpenRouter API smoke test.
 - package.json             Root dev runner (frontend + backend concurrently).
 
 Backend key folders:
-- backend/agents/          LLM orchestrator and thin wrappers.
-- backend/database/        SQLAlchemy models/session/schema.
-- backend/routers/         API endpoints.
-- backend/services/        Statement pipeline, parsing, categorization, auth, stats.
-- backend/rag/             Retrieval and chatbot pipeline.
-- backend/utils/           App config and static merchant rules.
+- backend/agents/          LLM orchestration and agent prompts.
+- backend/database/        SQLAlchemy models/session/schema init.
+- backend/routers/         API endpoints (upload, auth, chat, loans, assets, reset).
+- backend/services/        Parsing, categorization, PDF extraction, stats, auth, dashboards.
+- backend/rag/             SQL-based RAG (text-to-SQL + synthesis).
+- backend/utils/           App config, merchant rules.
 - backend/tests/           Parser-centric unit tests.
 
 Frontend key folders:
-- frontend/src/pages/      Dashboard, transactions, chatbot, auth screens.
-- frontend/src/components/ Shared UI widgets, chart grid, bank/non-bank tables, status card.
-- frontend/src/context/    Auth context/session state.
+- frontend/src/pages/      Dashboard, transactions, chatbot, auth, loans/assets.
+- frontend/src/components/ Shared UI widgets, tables, charts.
+- frontend/src/context/    Auth session state.
 - frontend/src/services/   API client and endpoint wrappers.
 
 ============================================================
@@ -63,6 +65,8 @@ FastAPI entry:
   - Registers routers:
     - upload_router
     - chat_router
+    - loans_router
+    - assets_router
     - reset_router
     - auth_router
   - Provides /health endpoint.
@@ -72,9 +76,9 @@ FastAPI entry:
 ============================================================
 Persistent entities:
 - users
-  - id, name, email, password_hash, password_salt, created_at
+  - id, name, user_id, password_hash, password_salt, created_at
 - user_sessions
-  - token_hash (never stores raw token), user_id
+  - token_hash (never stores raw token), user_id, created_at, last_used_at
 - statements
   - user_id, filename, source_hash, uploaded_at
 - transactions
@@ -83,10 +87,16 @@ Persistent entities:
 - non_banking_transactions
   - user_id, transaction_date, beneficiary, amount, transaction_type
   - category, description, created_at
+- loans
+  - user_id, loan_name, lender, principal_amount, interest_rate, tenure_months
+  - emi_amount, start_date, total_paid, status, notes, created_at
+- assets
+  - user_id, asset_name, purchase_price, purchase_year, rate_per_year
+  - notes, created_at
 
 Ownership boundary:
 - All major data reads/writes are scoped to authenticated user_id.
-- Statement and transaction queries in core services join through statement.user_id.
+- Statement and transaction queries join through statement.user_id.
 
 Deduplication:
 - On upload, statement bytes are hashed with SHA-256 as source_hash.
@@ -110,13 +120,21 @@ Statement + dashboard:
 - PATCH /update-transaction-type
 - PATCH /update-transaction-category
 
+Loans & assets:
+- GET /loans
+- POST /loans
+- PATCH /loans/{loan_id}
+- DELETE /loans/{loan_id}
+- GET /api/assets
+- POST /api/assets
+- DELETE /api/assets/{asset_id}
+
 Chat + reset:
 - POST /chat
 - DELETE /reset-data
 
 Notes:
 - Authorization uses Bearer token from localStorage, verified against user_sessions.
-- A legacy router file exists at backend/routers/statements.py but is not mounted in main.py.
 
 ============================================================
 6) INGESTION PIPELINE (UPLOAD TO STORAGE)
@@ -136,13 +154,12 @@ Detailed sequence:
 4. Normalize extracted rows to text lines.
 5. Parse each row via deterministic parser:
    - date, amount, transaction type, merchant, confidence.
-6. Low-confidence rows (confidence < LLM_CONFIDENCE_THRESHOLD) are sent to LLM enrichment.
+6. Low-confidence rows are sent to LLM enrichment (Agent 1).
 7. Build valid transaction set (requires date, merchant, amount, type).
-8. Categorize each valid transaction through hybrid categorizer.
+8. Categorize each valid transaction through hybrid categorizer (rule-first + LLM fallback).
 9. Persist statement + transactions to DB.
-10. Generate optional AI insights summary.
-11. Rebuild user RAG index in Chroma.
-12. Return dashboard summary payload.
+10. Generate optional AI insights summary (Agent 3).
+11. Refresh cached dashboard payloads (no vector index rebuild; SQL-RAG reads live DB).
 
 ============================================================
 7) RULE-BASED VS LLM LOGIC (HYBRID DESIGN)
@@ -172,93 +189,66 @@ Failure behavior:
   - App still works using deterministic logic.
 
 ============================================================
-8) GROQ USAGE AND MODEL-TO-AGENT MAPPING
+8) LLM PROVIDERS AND MODEL-TO-AGENT MAPPING
 ============================================================
-Provider:
-- Groq-compatible API via backend/services/groq_client.py
-- Base URL: https://api.groq.com/openai/v1
+Providers:
+- Groq (Agent 1 + Agent 2): https://api.groq.com/openai/v1
+- OpenRouter (Agent 3): https://openrouter.ai/api/v1
 
-Groq endpoints used:
-- POST /chat/completions
+Configured model keys (backend/.env or env vars):
+- AGENT_ONE_API_KEY (Groq)
+- AGENT_TWO_API_KEY (Groq)
+- OPENROUTER_API_KEY or AGENT_THREE_API_KEY (OpenRouter)
 
-Configured models in CURRENT backend/.env:
+Configured models (defaults in backend/utils/config.py):
 - AGENT_ONE_MODEL=groq/compound
 - AGENT_TWO_MODEL=groq/compound
 - AGENT_THREE_MODEL=openai/gpt-oss-120b
-- EMBEDDING_MODEL=nomic-embed-text
-
-Configured API keys in CURRENT backend/.env:
-- AGENT_ONE_API_KEY
-- AGENT_TWO_API_KEY
-- AGENT_THREE_API_KEY
+- EMBEDDING_MODEL=nomic-embed-text (legacy; not used by SQL-RAG)
 
 Agent responsibilities:
-- Agent 1 (enrich_transactions):
-  - Purpose: convert ambiguous raw statement rows into strict JSON objects.
+- Agent 1 (enrich_transactions, Groq):
+  - Convert ambiguous raw statement rows into strict JSON objects.
   - Called only for low-confidence parser rows.
-  - Uses dedicated GroqClient instance with AGENT_ONE_API_KEY.
-  - Includes strict JSON retry if the first response is not parseable JSON.
-- Agent 2 (categorize_batch):
-  - Purpose: classify unresolved transaction descriptions into fixed category list.
-  - Called only for unresolved items after all deterministic checks.
-  - Uses dedicated GroqClient instance with AGENT_TWO_API_KEY.
-- Agent 3 (summarize_anomalies and chat):
-  - Purpose: dashboard AI insight bullets and chatbot response generation.
-  - Uses dedicated GroqClient instance with AGENT_THREE_API_KEY.
-  - Used for:
-    - summarize_anomalies (insight bullets)
-    - /chat in both rag and general modes
-
-Embedding behavior:
-- Current RAG embedding path is local deterministic hashed semantic embedding fallback.
-- No external embedding provider is required for the current code path.
+  - Strict JSON retry if first response is not parseable JSON.
+- Agent 2 (categorize_batch, Groq):
+  - Classify unresolved transaction descriptions into fixed category list.
+  - Called only after deterministic checks.
+- Agent 3 (OpenRouter):
+  - Used for dashboard AI insight bullets.
+  - Used for SQL-RAG text-to-SQL + synthesis responses.
+  - Used for general chat mode.
 
 Rate-limit handling:
-- GroqClient normalizes quota/limit errors to:
+- Both clients normalize quota/limit errors to:
   - "API call limit reached, change the api key."
 
-Operational note:
-- OpenRouter has been removed from live source usage.
-- backend/services/openrouter_client.py is deleted.
-
 ============================================================
-9) RAG AND CHAT DESIGN
+9) RAG AND CHAT DESIGN (SQL-BASED)
 ============================================================
 Core files:
-- backend/rag/retriever.py
 - backend/rag/chatbot_service.py
 - backend/rag/prompt_builder.py
-- backend/rag/embeddings.py
 
-Index rebuild trigger points:
-- After successful statement upload.
-- After transaction type/category update.
-- After non-banking transaction creation.
-- Index clear on reset-data.
+RAG behavior:
+- No Chroma or vector DB in the active path.
+- RAG mode generates a SQL SELECT query against the live DB, then synthesizes a plain-text answer.
+- Section-aware schema:
+  - section=transactions: statements + transactions + non_banking_transactions
+  - section=loans_and_liabilities: loans + assets
+- Strict guardrails:
+  - Only SELECT queries allowed.
+  - Result sets limited to 20 rows for multi-row outputs.
+  - Enforces user_id filtering for security (transactions must join statements on user_id).
 
-Indexed chunk families:
-- transaction records
-- non-banking transaction records
-- monthly transaction windows
-- merchant summaries
-- category summaries
-- monthly/day summaries
-- dashboard summary + top merchants + category breakdown
-
-Chat modes:
-- mode=rag:
-  - Detect intent from user query (overview/category/merchant/trend/transaction).
-  - Retrieve top chunks (kind-filtered first, broad fallback second).
-  - If LLM enabled, answer grounded in retrieved context only.
-  - If LLM unavailable, use local fallback textual answer.
-- mode=general:
-  - Plain LLM assistant, not constrained to local finance data.
+General chat:
+- A standard OpenRouter chat completion without DB grounding.
 
 ============================================================
 10) FRONTEND ARCHITECTURE AND STATE
 ============================================================
 Routing:
-- /auth, /, /transactions, /chatbot
+- /auth, /, /transactions, /chatbot, /loans
 - ProtectedRoute enforces authenticated access.
 
 Auth storage:
@@ -278,28 +268,28 @@ Transactions editor:
 - Includes a manual entry form for cash/offline transactions.
 - Manual entry requires date, beneficiary, type, category, and amount; description is optional.
 - Renders a dedicated "Non-Banking Transactions" table below the bank-transactions table.
-- Transaction table now includes a synchronized top horizontal scrollbar for better UX on wide tables.
+- Transaction table includes a synchronized top horizontal scrollbar for better UX on wide tables.
 
-Header/layout UX:
-- Dashboard, Transactions, and Finance AI Assistant pages were refactored to use a cleaner header pattern:
-  - top info row with badge + username,
-  - centered title/description,
-  - separate action button row.
-- Dashboard action area includes:
-  - Upload Redacted PDF
-  - Redact PDF
-  - Unlock Locked PDF
+Loans & assets page:
+- Route: /loans
+- Displays loan summaries, EMI burden, completion rate, and outstanding totals.
+- Manages loan lifecycle (add, delete, mark closed, record payment).
+- Manages assets (add/delete) with appreciation/depreciation modeling.
+- Shows assets vs liabilities chart and asset distribution pie.
 
-Frontend API integration:
-- Axios interceptor injects Bearer token automatically.
-- Friendly error helper maps 401 and quota/rate-limit messages.
+Chatbot page:
+- Mode selector: RAG vs General.
+- RAG section selector: Transactions vs Loans & Assets.
+- RAG mode is explicitly described as SQL-based retrieval.
 
 ============================================================
 11) CONFIG FLAGS WITH BEHAVIOR IMPACT
 ============================================================
 Critical flags:
-- AGENT_ONE_API_KEY / AGENT_TWO_API_KEY / AGENT_THREE_API_KEY:
-  - Missing key for an agent disables that agent's external LLM calls and falls back safely.
+- AGENT_ONE_API_KEY / AGENT_TWO_API_KEY (Groq):
+  - Missing key disables Agent 1/2 external LLM calls and falls back safely.
+- OPENROUTER_API_KEY (OpenRouter):
+  - Missing key disables Agent 3 (RAG + general chat + insight bullets).
 - LLM_CONFIDENCE_THRESHOLD:
   - Lower means fewer rows sent to Agent 1.
   - Higher means more LLM enrichment calls.
@@ -316,19 +306,16 @@ Critical flags:
 12) KNOWN GAPS, DEAD PATHS, AND MAINTENANCE RISKS
 ============================================================
 Observed dead/legacy paths:
-- backend/routers/statements.py exists but not mounted.
-- backend/services/vector_memory.py exists but not used in active categorization path.
-- backend/agents/agent1_extraction.py and agent2_categorization.py are thin wrappers and not used by main pipeline.
+- backend/services/vector_memory.py still references Chroma but is disabled by config.
+- chroma_data/ persists on disk but is not used by SQL-RAG.
 
 Risk areas:
 - Category override updates all user transactions matching normalized description signature.
   - Powerful for consistency, but can over-apply if signature normalization is too broad.
 - Non-banking transactions use a separate table/model from bank-ingested transactions.
-  - This is intentional for provenance, but any future unified-edit feature must account for both models.
+  - Any future unified-edit feature must account for both models.
 - Parser heuristics are bank-format dependent.
   - New bank support should add extractor profile + tests.
-- Root repo currently appears uncommitted/untracked.
-  - Change management and rollback discipline should be enforced before major refactors.
 
 ============================================================
 13) TEST STATUS AND QUALITY SIGNALS
@@ -339,10 +326,9 @@ Existing tests:
 
 Missing test coverage (recommended additions):
 - API integration tests (auth + upload + dashboard + chat).
-- API tests for POST /non-banking-transactions and summary/chart aggregation with manual records.
-- DB migration/backward compatibility tests.
-- Category override behavior tests for false-positive grouping.
-- RAG retrieval regression tests.
+- API tests for /loans and /api/assets flows.
+- SQL-RAG safety tests (non-SELECT rejection, user_id enforcement).
+- Dashboard aggregation tests covering loans + assets impact.
 - Frontend route/auth/session tests.
 
 ============================================================
@@ -354,7 +340,7 @@ Before editing:
 3. Verify whether change affects:
    - DB schema/model
    - category logic
-   - retriever/chunk formats
+   - SQL-RAG prompts/guards
    - frontend payload expectations
 
 When changing parsing/categorization:
@@ -363,11 +349,11 @@ When changing parsing/categorization:
 6. Do not make LLM calls mandatory for correctness.
 
 When changing chat/RAG:
-7. Keep local fallback answer path functional when OpenRouter is unavailable.
+7. Keep SQL-RAG guarded to SELECT-only queries.
 8. Preserve user data scoping by user_id in retrieval and DB queries.
 
 When changing frontend:
-9. Keep payload contracts aligned with backend build_dashboard_payload output.
+9. Keep payload contracts aligned with build_dashboard_payload output.
 10. Maintain auth token flow and 401 handling.
 11. Transactions page depends on both transactions and nonBankTransactions arrays in the payload.
 
@@ -378,15 +364,17 @@ Core backend:
 - backend/main.py
 - backend/services/statement_service.py
 - backend/services/groq_client.py
+- backend/services/openrouter_client.py
 - backend/services/pdf_extractor.py
 - backend/services/parsing.py
 - backend/services/categorizer.py
 - backend/agents/agent_manager.py
 - backend/rag/chatbot_service.py
-- backend/rag/retriever.py
 - backend/database/models.py
 - backend/routers/upload_router.py
 - backend/routers/auth_router.py
+- backend/routers/loans_router.py
+- backend/routers/assets_router.py
 
 Core frontend:
 - frontend/src/App.js
@@ -395,6 +383,7 @@ Core frontend:
 - frontend/src/pages/FinanceDashboardPage.js
 - frontend/src/pages/TransactionsPage.js
 - frontend/src/pages/ChatbotPage.js
+- frontend/src/pages/LoansPage.js
 - frontend/src/components/TransactionTable.js
 - frontend/src/components/NonBankingTransactionTable.js
 - frontend/src/components/ChartsGrid.js
@@ -402,16 +391,16 @@ Core frontend:
 ============================================================
 16) FINAL OPERATIONAL SUMMARY
 ============================================================
-This codebase is a good practical hybrid AI system:
-- deterministic processing for reliability,
+This codebase is a pragmatic hybrid AI system:
+- Deterministic processing for reliability,
 - LLM fallback for ambiguity,
-- retrieval-augmented chat for user questions,
-- clear user-scoped data boundaries,
-- support for both bank-ingested and manual/offline finance records.
+- SQL-based RAG for user-scoped financial Q&A,
+- Clear user-scoped data boundaries,
+- Support for bank transactions, manual entries, loans, and assets.
 
 For best stability:
-- keep rules as primary source of truth,
-- treat LLM outputs as assistive,
-- expand tests before broad refactors,
-- keep manual transaction payloads and dashboard aggregations in sync,
-- remove or rewire dead modules to reduce confusion for future agents.
+- Keep rules as primary source of truth,
+- Treat LLM outputs as assistive,
+- Keep SQL-RAG guardrails strict,
+- Expand tests before broad refactors,
+- Remove or rewire legacy vector DB modules when convenient.

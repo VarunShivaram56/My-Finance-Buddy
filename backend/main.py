@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.session import check_database_connection, initialize_database
+from routers.assets_router import router as assets_router
 from routers.auth_router import router as auth_router
 from routers.chat_router import router as chat_router
 from routers.loans_router import router as loans_router
@@ -43,6 +44,7 @@ app.include_router(chat_router)
 app.include_router(loans_router)
 app.include_router(reset_router)
 app.include_router(auth_router)
+app.include_router(assets_router)
 
 
 @app.get("/health")

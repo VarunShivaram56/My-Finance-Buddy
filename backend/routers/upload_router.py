@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from database.models import User
 from database.session import get_db
-from rag.retriever import FinanceRetriever
 from routers.auth_router import get_current_user
 from services.bank_profiles import get_supported_banks_payload
 from services.statement_service import StatementService
@@ -33,7 +32,6 @@ class NonBankingTransactionCreatePayload(BaseModel):
 
 router = APIRouter()
 statement_service = StatementService()
-retriever = FinanceRetriever()
 logger = logging.getLogger(__name__)
 
 
@@ -53,10 +51,6 @@ async def upload_statement(
 
     try:
         result = statement_service.process_statement(db, current_user, file.filename, file_bytes, bank_name=bank_name)
-        try:
-            retriever.rebuild_index(db, current_user.id)
-        except Exception as exc:
-            logger.warning("RAG index rebuild skipped after upload: %s", exc)
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

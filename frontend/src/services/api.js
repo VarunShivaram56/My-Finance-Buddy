@@ -37,8 +37,8 @@ export const uploadStatement = async (file, bankName, onUploadProgress) => {
   return response.data;
 };
 
-export const askFinanceAssistant = async (query, mode) => {
-  const response = await api.post("/chat", { query, mode });
+export const askFinanceAssistant = async (query, mode, section) => {
+  const response = await api.post("/chat", { query, mode, section });
   return response.data;
 };
 
@@ -106,6 +106,22 @@ export const updateLoan = async (loanId, payload) => {
 
 export const deleteLoan = async (loanId) => {
   const response = await api.delete(`/loans/${loanId}`);
+  return response.data;
+};
+
+// Assets API
+export const fetchAssets = async () => {
+  const response = await api.get("/api/assets/");
+  return response.data;
+};
+
+export const createAsset = async (payload) => {
+  const response = await api.post("/api/assets/", payload);
+  return response.data;
+};
+
+export const deleteAsset = async (assetId) => {
+  const response = await api.delete(`/api/assets/${assetId}`);
   return response.data;
 };
 

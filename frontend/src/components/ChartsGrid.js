@@ -99,16 +99,35 @@ function ChartsGrid({ dashboard }) {
         </ResponsiveContainer>
       </Card>
 
-      <Card title="Top Categories">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={dashboard.topCategories || []} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1dfcc" />
-            <XAxis type="number" stroke="#99613a" />
-            <YAxis type="category" dataKey="name" stroke="#99613a" width={140} tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#e8a15b" radius={[0, 10, 10, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <Card title="Loan Portfolio">
+        {(!dashboard.loanSummary || dashboard.loanSummary.length === 0) ? (
+          <div className="flex h-full flex-col items-center justify-center p-4 text-center">
+            <p className="mb-2 text-slate-500">No loans available.</p>
+            <p className="text-sm text-slate-400">Record your active loans on the Loans & Liabilities page!</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={dashboard.loanSummary.flatMap(l => [
+                  { name: `${l.name} (Outstanding)`, value: l.outstanding, color: "#e8a15b" },
+                  { name: `${l.name} (Paid)`, value: l.paid, color: "#8f9b57" }
+                ]).filter(item => item.value > 0)}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={110}
+              >
+                {dashboard.loanSummary.flatMap(l => [
+                  { name: `${l.name} (Outstanding)`, value: l.outstanding, color: "#e8a15b" },
+                  { name: `${l.name} (Paid)`, value: l.paid, color: "#8f9b57" }
+                ]).filter(item => item.value > 0).map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
       </Card>
 
       <Card title="Top Merchants">

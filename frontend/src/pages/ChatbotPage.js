@@ -8,6 +8,7 @@ function ChatbotPage() {
   const { user, logout } = useAuth();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("rag");
+  const [section, setSection] = useState("transactions");
   const [currentQuestion, setCurrentQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ function ChatbotPage() {
     setAnswer("");
 
     try {
-      const response = await askFinanceAssistant(nextQuestion, mode);
+      const response = await askFinanceAssistant(nextQuestion, mode, section);
       setAnswer(response.answer);
       setWarning(response.warning || "");
       setQuery("");
@@ -91,8 +92,25 @@ function ChatbotPage() {
                   <option value="general">General Mode</option>
                 </select>
               </div>
-              <p className="text-sm leading-6 text-slate-500">
-                RAG mode uses your financial data as context. General mode behaves like a normal AI assistant.
+
+              {mode === "rag" ? (
+                <div className="w-full sm:max-w-xs">
+                  <label className="text-sm font-semibold uppercase tracking-[0.18em] text-[#c58b58]">
+                    Data Source
+                  </label>
+                  <select
+                    value={section}
+                    onChange={(event) => setSection(event.target.value)}
+                    className="mt-3 w-full rounded-2xl border border-borderSoft bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#dba168] focus:ring-2 focus:ring-[#f7d6ae]"
+                  >
+                    <option value="transactions">Transactions</option>
+                    <option value="loans_and_liabilities">Loans & Assets</option>
+                  </select>
+                </div>
+              ) : null}
+
+              <p className="max-w-[400px] text-sm leading-6 text-slate-500">
+                RAG mode generates exact SQL against your data. General mode is a basic assistant.
               </p>
             </div>
 

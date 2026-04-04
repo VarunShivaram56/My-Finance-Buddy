@@ -23,9 +23,24 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def _ensure_database_exists() -> None:
+    url = make_url(settings.database_url)
+    if url.get_backend_name() == "mysql":
+        db_name = url.database
+        if not db_name:
+            return
+            
+        temp_url = url.set(database="")
+        temp_engine = create_engine(temp_url, isolation_level="AUTOCOMMIT")
+        with temp_engine.connect() as conn:
+            conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`"))
+        temp_engine.dispose()
+
+
 def initialize_database() -> None:
     from database.models import Base as ModelBase
 
+    _ensure_database_exists()
     ModelBase.metadata.create_all(bind=engine)
     _run_lightweight_migrations()
 
@@ -165,6 +180,38 @@ def _run_lightweight_migrations() -> None:
             """
         )
         _create_index_if_missing("loans", "ix_loans_user_id", ["user_id"])
+
+    if "assets" not in tables:
+        _execute_ddl(
+            """
+            CREATE TABLE assets (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                user_id INTEGER NOT NULL,
+                asset_name VARCHAR(255) NOT NULL,
+                purchase_price DOUBLE NOT NULL,
+                purchase_year INTEGER NOT NULL,
+                rate_per_year DOUBLE NOT NULL DEFAULT 0,
+                notes TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_asset_user FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+            if engine.dialect.name != "sqlite"
+            else """
+            CREATE TABLE assets (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                asset_name VARCHAR(255) NOT NULL,
+                purchase_price DOUBLE NOT NULL,
+                purchase_year INTEGER NOT NULL,
+                rate_per_year DOUBLE NOT NULL DEFAULT 0,
+                notes TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        _create_index_if_missing("assets", "ix_assets_user_id", ["user_id"])
 
 
 def _execute_ddl(statement: str) -> None:

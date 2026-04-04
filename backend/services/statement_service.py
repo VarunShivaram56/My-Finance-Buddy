@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from agents.agent_manager import AgentManager
-from database.models import NonBankingTransaction, Statement, Transaction, User
-from rag.retriever import FinanceRetriever
+from database.models import Loan, NonBankingTransaction, Statement, Transaction, User
 from services.bank_profiles import get_supported_banks_payload
 from services.categorizer import CategorizationInput, TransactionCategorizer
 from services.dashboard_cache import dashboard_cache
@@ -29,7 +28,6 @@ class StatementService:
     def __init__(self) -> None:
         self.agent_manager = AgentManager()
         self.categorizer = TransactionCategorizer()
-        self.retriever = FinanceRetriever()
 
     def process_statement(self, db: Session, current_user: User, filename: str, file_bytes: bytes, bank_name: str = "karnataka_bank") -> dict:
         source_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -50,18 +48,18 @@ class StatementService:
             )
 
         parsed = [parse_transaction_text(row) for row in raw_transactions]
-        low_confidence_indices = [
-            index for index, transaction in enumerate(parsed) if transaction.confidence < settings.llm_confidence_threshold
-        ]
 
-        if low_confidence_indices:
-            enriched = self.agent_manager.enrich_transactions([raw_transactions[index] for index in low_confidence_indices])
-            for index, llm_row in zip(low_confidence_indices, enriched):
-                parsed[index].date = llm_row.get("date") or parsed[index].date
-                parsed[index].merchant = llm_row.get("merchant") or parsed[index].merchant
-                parsed[index].amount = llm_row.get("amount") or parsed[index].amount
-                parsed[index].transaction_type = llm_row.get("type") or parsed[index].transaction_type
-                parsed[index].description = llm_row.get("description") or parsed[index].description
+        # Agent 1: enrich only low-confidence rows (merchant extraction only)
+        enriched = self.agent_manager.enrich_low_confidence(raw_transactions, parsed)
+        for index, llm_row in enumerate(enriched):
+            if not llm_row:
+                continue
+            # Agent 1 now returns merchant-only enrichment; keep deterministic
+            # values for date/amount/type which the parser handles reliably.
+            if llm_row.get("merchant") and not parsed[index].merchant:
+                parsed[index].merchant = llm_row["merchant"]
+            # Upgrade confidence when LLM successfully identified a merchant
+            if llm_row.get("merchant"):
                 parsed[index].confidence = max(parsed[index].confidence, 0.85)
 
         valid_transactions = [
@@ -135,7 +133,8 @@ class StatementService:
         non_banking_transactions = self._user_non_banking_transactions_query(db, current_user.id).order_by(
             NonBankingTransaction.transaction_date.asc()
         ).all()
-        dashboard = self._build_cached_payloads(current_user.id, all_transactions, non_banking_transactions, insights)
+        loans = db.query(Loan).filter(Loan.user_id == current_user.id).all()
+        dashboard = self._build_cached_payloads(current_user.id, all_transactions, non_banking_transactions, insights, loans)
         return {
             "statementId": statement.id,
             "parsedCount": len(db_transactions),
@@ -153,11 +152,12 @@ class StatementService:
         non_banking_transactions = self._user_non_banking_transactions_query(db, current_user.id).order_by(
             NonBankingTransaction.transaction_date.asc()
         ).all()
-        if not transactions and not non_banking_transactions:
+        loans = db.query(Loan).filter(Loan.user_id == current_user.id).all()
+        if not transactions and not non_banking_transactions and not loans:
             dashboard = empty_dashboard_payload()
             dashboard["supportedBanks"] = get_supported_banks_payload()
             return dashboard
-        payloads = self._build_cached_payloads(current_user.id, transactions, non_banking_transactions, insights="")
+        payloads = self._build_cached_payloads(current_user.id, transactions, non_banking_transactions, insights="", loans=loans)
         return payloads["transactions" if include_transactions else "summary"]
 
     def update_transaction_type(self, db: Session, current_user: User, transaction_id: int, transaction_type: str) -> dict:
@@ -171,7 +171,6 @@ class StatementService:
 
         dashboard_cache.clear(current_user.id)
         dashboard = self.fetch_dashboard(db, current_user, include_transactions=True)
-        self._refresh_retriever_index(db, current_user.id)
         return {"message": "Transaction type updated successfully.", "dashboard": dashboard}
 
     def update_transaction_category(self, db: Session, current_user: User, transaction_id: int, category: str) -> dict:
@@ -193,7 +192,6 @@ class StatementService:
         db.commit()
         dashboard_cache.clear(current_user.id)
         dashboard = self.fetch_dashboard(db, current_user, include_transactions=True)
-        self._refresh_retriever_index(db, current_user.id)
         return {
             "message": f"Category updated successfully for {updated_count} similar transaction(s).",
             "dashboard": dashboard,
@@ -240,7 +238,6 @@ class StatementService:
 
         dashboard_cache.clear(current_user.id)
         dashboard = self.fetch_dashboard(db, current_user, include_transactions=True)
-        self._refresh_retriever_index(db, current_user.id)
         return {
             "message": "Non-banking transaction added successfully.",
             "dashboard": dashboard,
@@ -258,12 +255,14 @@ class StatementService:
         transactions: list[Transaction],
         non_banking_transactions: list[NonBankingTransaction],
         insights: str,
+        loans: list[Loan] | None = None,
     ) -> dict[str, dict]:
         summary_payload = build_dashboard_payload(
             transactions,
             insights,
             include_transactions=False,
             non_banking_transactions=non_banking_transactions,
+            loans=loans,
         )
         summary_payload["supportedBanks"] = get_supported_banks_payload()
 
@@ -272,17 +271,12 @@ class StatementService:
             insights,
             include_transactions=True,
             non_banking_transactions=non_banking_transactions,
+            loans=loans,
         )
         transactions_payload["supportedBanks"] = get_supported_banks_payload()
 
         dashboard_cache.set(user_id, summary_payload, transactions_payload)
         return {"summary": summary_payload, "transactions": transactions_payload}
-
-    def _refresh_retriever_index(self, db: Session, user_id: int) -> None:
-        try:
-            self.retriever.rebuild_index(db, user_id)
-        except Exception as exc:
-            logger.warning("RAG index rebuild skipped after data update: %s", exc)
 
     def _user_transactions_query(self, db: Session, user_id: int):
         return db.query(Transaction).join(Transaction.statement).filter(Statement.user_id == user_id)

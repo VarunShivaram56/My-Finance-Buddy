@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 
-from database.models import NonBankingTransaction, Transaction
+from database.models import Loan, NonBankingTransaction, Transaction
 from utils.merchant_rules import CATEGORIES
 
 
@@ -33,6 +33,7 @@ def empty_dashboard_payload() -> dict:
         "insights": "",
         "supportedBanks": [],
         "availableCategories": CATEGORIES,
+        "loanSummary": [],
     }
 
 
@@ -42,8 +43,10 @@ def build_dashboard_payload(
     *,
     include_transactions: bool = True,
     non_banking_transactions: list[NonBankingTransaction] | None = None,
+    loans: list[Loan] | None = None,
 ) -> dict:
     non_banking_transactions = non_banking_transactions or []
+    loans = loans or []
     total_spending = 0.0
     total_credit = 0.0
     highest_spend_amount = 0.0
@@ -133,6 +136,22 @@ def build_dashboard_payload(
             })
     recurring_merchants = recurring_merchants[:10]
 
+    # Loan summary for pie chart
+    loan_summary = []
+    if loans:
+        for loan in loans:
+            outstanding = (loan.emi_amount * loan.tenure_months) - loan.total_paid
+            if outstanding < 0:
+                outstanding = loan.principal_amount - loan.total_paid # Fallback if EMI isn't set properly
+                if outstanding < 0:
+                    outstanding = 0
+            if outstanding > 0 or loan.total_paid > 0:
+                loan_summary.append({
+                    "name": loan.loan_name,
+                    "outstanding": round(outstanding, 2),
+                    "paid": round(loan.total_paid, 2),
+                })
+
     return {
         "summary": {
             "totalSpending": round(total_spending, 2),
@@ -188,4 +207,5 @@ def build_dashboard_payload(
         "insights": insights,
         "supportedBanks": [],
         "availableCategories": CATEGORIES,
+        "loanSummary": loan_summary,
     }

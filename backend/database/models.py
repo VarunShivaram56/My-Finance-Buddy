@@ -28,6 +28,9 @@ class User(Base):
     loans: Mapped[list["Loan"]] = relationship(
         "Loan", back_populates="user", cascade="all, delete-orphan"
     )
+    assets: Mapped[list["Asset"]] = relationship(
+        "Asset", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserSession(Base):
@@ -109,3 +112,18 @@ class Loan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="loans")
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    asset_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    purchase_price: Mapped[float] = mapped_column(Float, nullable=False)
+    purchase_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    rate_per_year: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship("User", back_populates="assets")

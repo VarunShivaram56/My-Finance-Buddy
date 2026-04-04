@@ -1,24 +1,18 @@
-from __future__ import annotations
-
-import re
-
+import json
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from agents.agent_manager import AgentManager
-from database.models import Statement, Transaction, User
-from rag.prompt_builder import build_chat_prompt
-from rag.retriever import FinanceRetriever, RetrievalChunk
-from services.stats import build_dashboard_payload
+from database.models import User
 from utils.config import settings
-from utils.merchant_rules import CATEGORIES
 
 
 class ChatbotService:
     def __init__(self) -> None:
-        self.retriever = FinanceRetriever()
         self.agent_manager = AgentManager()
-
-    def answer(self, db: Session, current_user: User, query: str, mode: str = "rag") -> dict[str, str]:
+        
+    def answer(self, db: Session, current_user: User, query: str, mode: str = "rag", section: str = "transactions") -> dict[str, str]:
         query = query.strip()
         selected_mode = (mode or "rag").strip().lower()
         if selected_mode not in {"rag", "general"}:
@@ -30,13 +24,13 @@ class ChatbotService:
         if selected_mode == "general":
             return self._answer_general(query)
 
-        return self._answer_rag(db, current_user, query)
+        return self._answer_sql_rag(db, current_user, query, section)
 
     def _answer_general(self, query: str) -> dict[str, str]:
         if not self.agent_manager.client.enabled:
             return {
-                "answer": "General chat needs Agent 3 Groq credentials. Add AGENT_THREE_API_KEY in backend/.env to use normal LLM mode.",
-                "warning": "",
+                "answer": "General chat needs Agent 3 API credentials.",
+                "warning": "Add OPENROUTER_API_KEY",
                 "mode": "general",
             }
 
@@ -47,9 +41,10 @@ class ChatbotService:
                     {
                         "role": "system",
                         "content": (
-                            "You are a helpful AI assistant. "
-                            "Answer naturally and clearly. "
-                            "This mode is general chat and is not restricted to local finance data."
+                            "You are a helpful AI personal finance assistant. Answer naturally.\n"
+                            "This mode is general chat and NOT restricted to local finance data.\n"
+                            "CRITICAL: Keep your answer under 200 to 250 words. Do not use markdown tables or complex formatting. "
+                            "Give preference to answers in clear bullet points instead of long paragraphs."
                         ),
                     },
                     {"role": "user", "content": query},
@@ -57,178 +52,143 @@ class ChatbotService:
                 temperature=0.3,
             ).strip()
             return {"answer": answer or "I could not generate a response.", "warning": "", "mode": "general"}
-        except RuntimeError as exc:
-            warning = "API call limit reached, change the api key." if "api call limit reached" in str(exc).lower() else ""
+        except Exception as exc:
+            print(f"API Error in Agent 3 (General Chat): {exc}")
+            import logging
+            logging.getLogger(__name__).error("Agent 3 general chat failed: %s", exc)
+            warning = self._warning_from_agent_error(exc)
+            return {"answer": "General chat could not answer right now.", "warning": warning, "mode": "general"}
+
+    def _answer_sql_rag(self, db: Session, current_user: User, query: str, section: str) -> dict[str, str]:
+        if not self.agent_manager.client.enabled:
             return {
-                "answer": "General chat could not answer right now.",
-                "warning": warning,
-                "mode": "general",
+                "answer": "RAG chat needs Agent 3 API credentials.",
+                "warning": "Add OPENROUTER_API_KEY",
+                "mode": "rag",
             }
-        except Exception:
-            return {"answer": "General chat could not answer right now.", "warning": "", "mode": "general"}
+            
+        try:
+            # Step 1: Generate SQL Query Based on Schema
+            if section == "loans_and_liabilities":
+                schema_context = """
+Table: loans
+Columns: id (INTEGER), user_id (INTEGER), loan_name (VARCHAR), lender (VARCHAR), principal_amount (FLOAT), interest_rate (FLOAT), tenure_months (INTEGER), emi_amount (FLOAT), start_date (DATE), total_paid (FLOAT), status (VARCHAR)
 
-    def _answer_rag(self, db: Session, current_user: User, query: str) -> dict[str, str]:
-        transactions = (
-            db.query(Transaction)
-            .join(Transaction.statement)
-            .filter(Statement.user_id == current_user.id)
-            .order_by(Transaction.transaction_date.asc())
-            .all()
-        )
-        if not transactions:
-            return {"answer": "I do not have enough financial data yet. Upload a statement first.", "warning": "", "mode": "rag"}
+Table: assets
+Columns: id (INTEGER), user_id (INTEGER), asset_name (VARCHAR), purchase_price (FLOAT), purchase_year (INTEGER), rate_per_year (FLOAT)
+"""
+            else:
+                schema_context = """
+Table: statements
+Columns: id (INTEGER), user_id (INTEGER)
 
-        dashboard = build_dashboard_payload(transactions, insights="", include_transactions=False)
-        intent = _detect_intent(query)
-        kinds = _preferred_kinds_for_intent(intent)
-        retrieved_chunks = self.retriever.retrieve_chunks(current_user.id, query, top_k=10, kinds=kinds)
+Table: transactions
+Columns: id (INTEGER), statement_id (INTEGER), transaction_date (DATE), merchant (VARCHAR), amount (FLOAT), transaction_type (VARCHAR), category (VARCHAR), description (TEXT)
 
-        if len(retrieved_chunks) < 3:
-            retrieved_chunks = self.retriever.retrieve_chunks(current_user.id, query, top_k=10)
+Table: non_banking_transactions
+Columns: id (INTEGER), user_id (INTEGER), transaction_date (DATE), beneficiary (VARCHAR), amount (FLOAT), transaction_type (VARCHAR), category (VARCHAR), description (TEXT)
+"""
+            
+            base_prompt = f"""
+Given the following MySQL schemas:
+{schema_context}
 
-        context = _build_retrieval_context(retrieved_chunks)
-        if not context:
-            return {"answer": _fallback_overview_answer(dashboard), "warning": "", "mode": "rag"}
+The current user has user_id = {current_user.id}.
+Only return data for this specific user. For the `transactions` table, you MUST join with `statements` on statement_id to filter by `user_id = {current_user.id}`.
 
-        if self.agent_manager.client.enabled:
+Guidelines:
+1. ONLY return a single valid MySQL query as a string. Do NOT output markdown formatting like ```sql...```
+2. PREFER AGGREGATION (SUM, COUNT, AVG, GROUP BY) when asked about total spending, income, or general trends. 
+3. Use strict MySQL syntax (e.g., MONTH(transaction_date), YEAR(transaction_date)).
+4. Limit raw row results to 20 rows if returning multiple unaggregated rows (LIMIT 20).
+        
+User asks: "{query}"
+"""
+
+            sql_query = self._generate_sql(base_prompt)
+            if not sql_query.lower().startswith("select"):
+                return {"answer": "I could not understand your query. Please rephrase it.", "warning": "Generated SQL query was not a SELECT.", "mode": "rag"}
+
+            # Execute the query with a 1-retry loop for corrections
             try:
-                prompt = build_chat_prompt(user_query=query, retrieved_context=context)
-                answer = self.agent_manager.client.chat_completion(
-                    settings.agent_three_model,
-                    [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a personal finance assistant. "
-                                "Use the retrieved finance context only. "
-                                "Answer with concrete numbers, dates, and merchants when available. "
-                                "If the retrieved context is insufficient, say that clearly. "
-                                "Respond in plain text only. "
-                                "Do not use tables, markdown, bullet points, numbered lists, code blocks, or HTML."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.1,
-                ).strip()
-                if answer:
-                    return {"answer": answer, "warning": "", "mode": "rag"}
-            except RuntimeError as exc:
-                if "api call limit reached" in str(exc).lower():
-                    return {
-                        "answer": _build_local_answer(intent, retrieved_chunks, dashboard),
-                        "warning": "API call limit reached, change the api key.",
-                        "mode": "rag",
-                    }
+                result = db.execute(text(sql_query))
+                rows = result.fetchmany(20) # Programmatic limit
+            except SQLAlchemyError as db_err:
+                # Retry logic
+                error_msg = str(db_err)
+                retry_prompt = f"{base_prompt}\n\nThe previous query you generated was:\n{sql_query}\n\nIt failed with this error:\n{error_msg}\n\nPlease fix the query and return ONLY the corrected MySQL query without markdown formatting."
+                db.rollback()
+                sql_query = self._generate_sql(retry_prompt)
+
+                if not sql_query.lower().startswith("select"):
+                    return {"answer": "I could not understand your query. Please rephrase it.", "warning": "Generated SQL query was not a SELECT.", "mode": "rag"}
+                    
+                result = db.execute(text(sql_query))
+                rows = result.fetchmany(20)
+
+            # Extract column names mapping
+            try:
+                columns = result.keys()
+                results_json = [{k: v for k, v in zip(columns, row) if v is not None} for row in rows]
             except Exception:
-                pass
+                results_json = [str(r) for r in rows]
 
-        return {"answer": _build_local_answer(intent, retrieved_chunks, dashboard), "warning": "", "mode": "rag"}
+            # Step 2: Synthesis Agent
+            final_prompt = f"""
+You are a concise personal finance assistant.
+A user asked: "{query}"
 
+I executed a MySQL query on their data and found:
+{json.dumps(results_json, default=str, separators=(',', ':'))}
 
-def _preferred_kinds_for_intent(intent: str) -> list[str] | None:
-    mapping = {
-        "overview": ["dashboard_summary", "category_breakdown", "top_merchant", "month_summary"],
-        "category": ["category_summary", "category_breakdown", "transaction"],
-        "merchant": ["merchant_summary", "transaction", "transaction_window"],
-        "transaction": ["transaction", "transaction_window", "merchant_summary"],
-        "trend": ["month_summary", "day_summary", "transaction_window", "dashboard_summary"],
-    }
-    return mapping.get(intent)
+CRITICAL RULES:
+1. Answer the user's question clearly based ONLY on this data. Use concrete numbers and dates.
+2. If the data is empty `[]` or lacks the answer, state explicitly that you do not have that information recorded.
+3. DO NOT use markdown tables, bullet points, asterisks, or bold text. 
+4. Output simple, narrative plain text paragraphs. No formatting.
+"""
+            
+            final_answer = self.agent_manager.client.chat_completion(
+                settings.agent_three_model,
+                [
+                    {"role": "system", "content": "You are an analytical financial assistant. ALWAYS output plain text."},
+                    {"role": "user", "content": final_prompt},
+                ],
+                temperature=0.1,
+            ).strip()
+            
+            return {"answer": final_answer, "warning": "", "mode": "rag"}
 
+        except Exception as exc:
+            print(f"API Error in Agent 3 (RAG Chat): {exc}")
+            import logging
+            logging.getLogger(__name__).error("Agent 3 RAG chat failed: %s", exc)
+            warning = self._warning_from_agent_error(exc)
+            return {
+                "answer": "Sorry, I couldn't compute the answer to your question right now.",
+                "warning": warning,
+                "mode": "rag",
+            }
+            
+    def _generate_sql(self, prompt: str) -> str:
+        sql_query = self.agent_manager.client.chat_completion(
+            settings.agent_three_model,
+            [
+                {"role": "system", "content": "You are a pristine text-to-sql assistant outputting purely MySQL SELECT queries."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+        ).strip()
+        sql_query = sql_query.replace("```sql", "").replace("```mysql", "").replace("```", "").strip()
+        return sql_query
 
-def _detect_intent(query: str) -> str:
-    lowered = query.lower()
-    if any(word in lowered for word in ["monthly", "daily", "trend", "average", "over time"]):
-        return "trend"
-    if _detect_category(query):
-        return "category"
-    if _extract_named_phrase(query):
-        return "merchant"
-    if any(word in lowered for word in ["summary", "overview", "finances", "how am i doing", "saving", "savings"]):
-        return "overview"
-    return "transaction"
-
-
-def _detect_category(query: str) -> str | None:
-    lowered = query.lower()
-    for category in CATEGORIES:
-        if category.lower() in lowered:
-            return category
-    aliases = {
-        "food": "Food & Dining",
-        "dining": "Food & Dining",
-        "shopping": "Shopping & Lifestyle",
-        "lifestyle": "Shopping & Lifestyle",
-        "transport": "Transportation",
-        "transportation": "Transportation",
-        "bills": "Utilities & Bills",
-        "utilities": "Utilities & Bills",
-        "rent": "Housing & Rent",
-        "housing": "Housing & Rent",
-        "entertainment": "Entertainment & Subscriptions",
-        "subscriptions": "Entertainment & Subscriptions",
-        "subscription": "Entertainment & Subscriptions",
-        "groceries": "Groceries & Essentials",
-        "essentials": "Groceries & Essentials",
-        "health": "Healthcare",
-        "healthcare": "Healthcare",
-        "education": "Education",
-        "friends": "Friends and Relatives",
-        "relatives": "Friends and Relatives",
-        "income": "Income",
-        "investment": "Financial & Investments",
-        "investments": "Financial & Investments",
-        "financial": "Financial & Investments",
-    }
-    for alias, category in aliases.items():
-        if alias in lowered:
-            return category
-    return None
-
-
-def _extract_named_phrase(query: str) -> str:
-    match = re.search(r"(?:spent at|paid to|received from|merchant|transaction(?:s)? with|for)\s+(.+)", query, flags=re.I)
-    return match.group(1).strip(" ?.") if match else ""
-
-
-def _build_retrieval_context(chunks: list[RetrievalChunk]) -> str:
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for chunk in chunks:
-        if chunk.text in seen:
-            continue
-        deduped.append(chunk.text)
-        seen.add(chunk.text)
-    return "\n".join(deduped[:8])
-
-
-def _build_local_answer(intent: str, chunks: list[RetrievalChunk], dashboard: dict) -> str:
-    if intent == "overview":
-        return _fallback_overview_answer(dashboard)
-
-    lines = [chunk.text for chunk in chunks[:5]]
-    if not lines:
-        return _fallback_overview_answer(dashboard)
-
-    if intent in {"merchant", "category"}:
-        return "Here is the most relevant finance context I found:\n" + "\n".join(lines)
-    if intent == "trend":
-        return "Relevant spending trend context:\n" + "\n".join(lines)
-    return "Relevant transaction context:\n" + "\n".join(lines)
-
-
-def _fallback_overview_answer(dashboard: dict) -> str:
-    total = dashboard["summary"]["totalSpending"]
-    avg = dashboard["summary"]["averageDailySpend"]
-    savings = dashboard["summary"]["savingsEstimate"]
-    top_category = max(dashboard["categoryBreakdown"], key=lambda item: item["value"], default=None)
-    top_merchant = dashboard["topMerchants"][0] if dashboard["topMerchants"] else None
-
-    lines = [f"Your tracked debit spending is Rs {total:.2f}, with an average daily spend of Rs {avg:.2f}."]
-    lines.append(f"Your savings estimate is Rs {savings:.2f}.")
-    if top_category:
-        lines.append(f"Your biggest spending category is {top_category['name']} at Rs {top_category['value']:.2f}.")
-    if top_merchant:
-        lines.append(f"Your top merchant by spend is {top_merchant['merchant']} at Rs {top_merchant['amount']:.2f}.")
-    return " ".join(lines)
+    def _warning_from_agent_error(self, exc: Exception) -> str:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if "organization is restricted" in lowered:
+            return "Agent 3 organization is restricted."
+        if "authentication failed" in lowered:
+            return "Agent 3 authentication failed."
+        if "api call limit" in lowered or "quota" in lowered:
+            return "API call limit reached, change the api key."
+        return message
