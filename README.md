@@ -1,77 +1,149 @@
 # My Finance Buddy
 
-Local-first web app for analyzing redacted bank statement PDFs with a rule-first backend pipeline and a simple React dashboard.
+Local-first AI-assisted personal finance dashboard. Upload redacted bank statement PDFs, add manual transactions/loans/assets, and explore insights via a SQL-based RAG chatbot. The backend is rule-first with LLM fallbacks only when needed.
 
-## Stack
+## Highlights
 
-- Backend: Python, FastAPI, pdfplumber, MySQL, ChromaDB, OpenRouter API
-- Frontend: React, TailwindCSS, Axios, Recharts
-- AI models:
-  - Agent 1: `google/gemma-3n-e2b-it`
-  - Agent 2: `arcee-ai/trinity-mini`
-  - Agent 3: `openai/gpt-oss-20b`
-  - Embeddings: `nomic-embed-text`
+- Hybrid pipeline: deterministic parsing/categorization with LLM fallback for low-confidence rows
+- SQL-RAG chatbot over your live database (SELECT-only guardrails)
+- Dashboard analytics, transactions editor, loans/assets tracking
+- Runs locally; you control your data and API keys
+
+## Tech Stack
+
+- Backend: FastAPI, SQLAlchemy, pdfplumber
+- Frontend: React, TailwindCSS, Recharts, Axios
+- Database: SQLite by default (MySQL supported)
+- LLM providers: Groq + OpenRouter (optional)
 
 ## Project Structure
 
 ```text
 my-finance-buddy
-├── backend
-│   ├── agents
-│   ├── database
-│   ├── routers
-│   ├── services
-│   ├── utils
-│   ├── main.py
-│   └── requirements.txt
-├── frontend
-│   ├── public
-│   ├── src
-│   ├── package.json
-│   └── tailwind.config.js
-└── README.md
+|-- backend
+|   |-- agents
+|   |-- database
+|   |-- rag
+|   |-- routers
+|   |-- services
+|   |-- utils
+|   |-- main.py
+|   `-- requirements.txt
+|-- frontend
+|   |-- public
+|   |-- src
+|   |-- package.json
+|   `-- tailwind.config.js
+|-- scripts
+|-- chroma_data
+|-- package.json
+`-- README.md
 ```
 
-## One-Command Dev Startup
+## Prerequisites
+
+- Node.js 18+ (includes npm)
+- Python 3.10+
+
+## Quick Start (One Command)
 
 From the project root:
 
 ```bash
-cd C:\Users\varun\OneDrive\Documents\Playground\my-finance-buddy
 npm install
 npm run dev
 ```
 
 This starts:
 
-- React frontend on `http://localhost:3000`
-- FastAPI backend on `http://localhost:8000`
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
 
-Make sure Python dependencies are installed once before using the combined dev command.
+The `npm run dev` script calls `scripts/start-backend.ps1`, which will:
 
-## Backend Setup
+- Reuse an existing healthy backend on port 8000 if present
+- Create/activate a virtual environment under `backend/.venv`
+- Install backend requirements if needed
+- Launch the FastAPI server
 
-1. Create a MySQL database named `my_finance_buddy`.
-2. Optionally run the schema in [backend/database/schema.sql](C:\Users\varun\OneDrive\Documents\Playground\my-finance-buddy\backend\database\schema.sql).
-3. Copy `backend/.env.example` to `backend/.env` and update credentials.
-4. Install dependencies:
+## Environment Setup (Secrets + Database)
+
+Never commit secrets. Use the provided `.env.example` files and keep your real `.env` files local only.
+
+### Backend
+
+1. Copy the example file:
+
+```bash
+copy backend\.env.example backend\.env
+```
+
+2. Fill in your values in `backend/.env`:
+
+```text
+APP_ENV=development
+DATABASE_URL=sqlite:///./backend/my_finance_buddy.db
+AGENT_ONE_API_KEY=
+AGENT_TWO_API_KEY=
+AGENT_THREE_API_KEY=
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+AGENT_ONE_MODEL=groq/compound
+AGENT_TWO_MODEL=groq/compound
+AGENT_THREE_MODEL=openai/gpt-oss-120b
+```
+
+Notes:
+
+- If any API key is blank, the app falls back to rule-based logic for that agent.
+- SQL-RAG and AI insights require `OPENROUTER_API_KEY` or `AGENT_THREE_API_KEY`.
+
+### Frontend
+
+1. Copy the example file:
+
+```bash
+copy frontend\.env.example frontend\.env
+```
+
+2. Update the API base URL if you run the backend elsewhere:
+
+```text
+REACT_APP_API_BASE_URL=http://localhost:8000
+```
+
+## Database Options
+
+### Option A: SQLite (default, zero setup)
+
+No extra setup needed. The default `DATABASE_URL` already points to SQLite.
+
+### Option B: MySQL
+
+1. Create a database (example name: `my_finance_buddy`).
+2. Update `DATABASE_URL` in `backend/.env`:
+
+```text
+DATABASE_URL=mysql+pymysql://USER:PASSWORD@HOST:3306/my_finance_buddy
+```
+
+3. If you want to initialize a schema manually, use:
+
+- `backend/database/schema.sql`
+
+The backend will also create missing tables automatically via SQLAlchemy at startup.
+
+## Running Services Separately (Optional)
+
+Backend only:
 
 ```bash
 cd backend
 pip install -r requirements.txt
-```
-
-5. Start the API directly if needed:
-
-```bash
-cd backend
 uvicorn main:app --reload
 ```
 
-## Frontend Setup
-
-1. Copy `frontend/.env.example` to `frontend/.env` if you want to override the API URL.
-2. Install dependencies and start the app directly if needed:
+Frontend only:
 
 ```bash
 cd frontend
@@ -79,41 +151,31 @@ npm install
 npm start
 ```
 
-The UI runs at `http://localhost:3000` and expects the FastAPI backend at `http://localhost:8000`.
+## API Surface (Key Endpoints)
 
-## API Overview
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /upload-statement`
+- `GET /dashboard`
+- `GET /transactions`
+- `POST /chat`
+- `GET /loans`
+- `POST /loans`
+- `GET /api/assets`
+- `POST /api/assets`
 
-### `POST /upload-statement`
+## Security Notes
 
-Accepts a redacted bank statement PDF as `multipart/form-data`.
+- Do not commit `backend/.env` or `frontend/.env` to Git.
+- Use redacted bank statements only.
+- The backend stores session tokens as hashes (never raw tokens).
 
-```bash
-curl -X POST "http://localhost:8000/upload-statement" \
-  -H "accept: application/json" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@sample-redacted-statement.pdf;type=application/pdf"
-```
+## Troubleshooting
 
-### `GET /dashboard`
+- If `npm run dev` fails to start the backend, try running the backend directly (see above) to see Python errors.
+- If the UI cannot reach the API, confirm `REACT_APP_API_BASE_URL` matches the backend URL.
+- If LLM calls fail, verify your API keys and provider limits.
 
-Returns summary cards, charts, merchant rollups, transactions, and optional AI insights.
+## License
 
-```bash
-curl "http://localhost:8000/dashboard"
-```
-
-## Processing Pipeline
-
-1. `pdfplumber` extracts tables from each PDF page with `page.extract_tables()`.
-2. Rule-based parsing detects date, amount, transaction type, and merchant.
-3. Low-confidence rows are batched to Agent 1 for JSON structuring.
-4. Merchant dictionary and vector memory try categorization first.
-5. Unknown merchants are batched to Agent 2 for one of 13 categories.
-6. Data is stored in MySQL and summarized for charts.
-7. Agent 3 optionally produces short insight bullets.
-
-## Notes
-
-- The app is designed to work locally and only calls LLMs when rules are insufficient.
-- ChromaDB stores merchant-category memory to reduce repeated categorization calls.
-- Upload only redacted statements to preserve privacy.
+Add your license info here.
