@@ -58,23 +58,39 @@ class Statement(Base):
     transactions: Mapped[list["Transaction"]] = relationship(
         "Transaction", back_populates="statement", cascade="all, delete-orphan"
     )
+    raw_lines: Mapped[list["RawStatementLine"]] = relationship(
+        "RawStatementLine", back_populates="statement", cascade="all, delete-orphan"
+    )
+
+
+class RawStatementLine(Base):
+    __tablename__ = "raw_statement_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    statement_id: Mapped[int] = mapped_column(ForeignKey("statements.id"), nullable=False, index=True)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    statement: Mapped["Statement"] = relationship("Statement", back_populates="raw_lines")
+    transaction: Mapped["Transaction"] = relationship("Transaction", back_populates="raw_line", uselist=False, cascade="all, delete-orphan")
 
 
 class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    raw_line_id: Mapped[int] = mapped_column(ForeignKey("raw_statement_lines.id"), nullable=False, unique=True, index=True)
     statement_id: Mapped[int] = mapped_column(ForeignKey("statements.id"), nullable=False, index=True)
-    transaction_date: Mapped[str] = mapped_column(Date, nullable=False)
-    merchant: Mapped[str] = mapped_column(String(255), nullable=False)
+    transaction_date: Mapped[str] = mapped_column(Date, nullable=False, index=True)
+    merchant: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    category: Mapped[str] = mapped_column(String(50), nullable=False, default="Others")
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="Others", index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    parser_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    raw_line: Mapped["RawStatementLine"] = relationship("RawStatementLine", back_populates="transaction")
     statement: Mapped["Statement"] = relationship("Statement", back_populates="transactions")
 
 
@@ -83,11 +99,11 @@ class NonBankingTransaction(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    transaction_date: Mapped[str] = mapped_column(Date, nullable=False)
-    beneficiary: Mapped[str] = mapped_column(String(255), nullable=False)
+    transaction_date: Mapped[str] = mapped_column(Date, nullable=False, index=True)
+    beneficiary: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    category: Mapped[str] = mapped_column(String(50), nullable=False, default="Others / Uncategorized")
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="Others / Uncategorized", index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

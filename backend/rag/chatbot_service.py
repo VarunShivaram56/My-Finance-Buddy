@@ -1,4 +1,5 @@
 import json
+import re
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -30,7 +31,7 @@ class ChatbotService:
         if not self.agent_manager.client.enabled:
             return {
                 "answer": "General chat needs Agent 3 API credentials.",
-                "warning": "Add OPENROUTER_API_KEY",
+                "warning": "Add GROQ_API_KEY",
                 "mode": "general",
             }
 
@@ -63,7 +64,7 @@ class ChatbotService:
         if not self.agent_manager.client.enabled:
             return {
                 "answer": "RAG chat needs Agent 3 API credentials.",
-                "warning": "Add OPENROUTER_API_KEY",
+                "warning": "Add GROQ_API_KEY",
                 "mode": "rag",
             }
             
@@ -90,17 +91,18 @@ Columns: id (INTEGER), user_id (INTEGER), transaction_date (DATE), beneficiary (
 """
             
             base_prompt = f"""
-Given the following MySQL schemas:
+Given the following SQLite3 schemas:
 {schema_context}
 
 The current user has user_id = {current_user.id}.
 Only return data for this specific user. For the `transactions` table, you MUST join with `statements` on statement_id to filter by `user_id = {current_user.id}`.
 
 Guidelines:
-1. ONLY return a single valid MySQL query as a string. Do NOT output markdown formatting like ```sql...```
-2. PREFER AGGREGATION (SUM, COUNT, AVG, GROUP BY) when asked about total spending, income, or general trends. 
-3. Use strict MySQL syntax (e.g., MONTH(transaction_date), YEAR(transaction_date)).
-4. Limit raw row results to 20 rows if returning multiple unaggregated rows (LIMIT 20).
+1. ONLY return a single valid SQLite3 query as a string. Do NOT output markdown formatting like ```sql...```
+2. CRITICAL TOKEN LIMIT OPTIMIZATION: Prefer AGGREGATION (SUM, COUNT, AVG) instead of returning raw rows. 
+3. Use strict SQLite syntax. For example, instead of MONTH() or YEAR(), use STRFTIME('%m', transaction_date) and STRFTIME('%Y', transaction_date).
+4. CRITICAL: SQLite is case-sensitive. ALWAYS use `LOWER(column) = LOWER('value')` or `LIKE` when searching strings (e.g. category, merchant).
+5. Limit raw row results to 15 rows if returning multiple unaggregated rows (LIMIT 15). Select only the columns needed to answer the question to save token bounds.
         
 User asks: "{query}"
 """
@@ -116,7 +118,7 @@ User asks: "{query}"
             except SQLAlchemyError as db_err:
                 # Retry logic
                 error_msg = str(db_err)
-                retry_prompt = f"{base_prompt}\n\nThe previous query you generated was:\n{sql_query}\n\nIt failed with this error:\n{error_msg}\n\nPlease fix the query and return ONLY the corrected MySQL query without markdown formatting."
+                retry_prompt = f"{base_prompt}\n\nThe previous query you generated was:\n{sql_query}\n\nIt failed with this error:\n{error_msg}\n\nPlease fix the query and return ONLY the corrected SQLite3 query without markdown formatting."
                 db.rollback()
                 sql_query = self._generate_sql(retry_prompt)
 
@@ -124,7 +126,7 @@ User asks: "{query}"
                     return {"answer": "I could not understand your query. Please rephrase it.", "warning": "Generated SQL query was not a SELECT.", "mode": "rag"}
                     
                 result = db.execute(text(sql_query))
-                rows = result.fetchmany(20)
+                rows = result.fetchmany(15)
 
             # Extract column names mapping
             try:
@@ -138,14 +140,14 @@ User asks: "{query}"
 You are a concise personal finance assistant.
 A user asked: "{query}"
 
-I executed a MySQL query on their data and found:
+I executed a SQLite3 query on their data and found:
 {json.dumps(results_json, default=str, separators=(',', ':'))}
 
 CRITICAL RULES:
-1. Answer the user's question clearly based ONLY on this data. Use concrete numbers and dates.
+1. Answer the user's question clearly based ONLY on this data. Use concrete numbers and dates. Never hallucinate numbers. Format all monetary amounts using 'Rs. ' (e.g. Rs. 500) instead of the dollar sign ($).
 2. If the data is empty `[]` or lacks the answer, state explicitly that you do not have that information recorded.
-3. DO NOT use markdown tables, bullet points, asterisks, or bold text. 
-4. Output simple, narrative plain text paragraphs. No formatting.
+3. DO NOT use markdown tables. Limit bullet points and formatting to save tokens. Keep answers crisp.
+4. Output simple, narrative plain text paragraphs. Do not output anything else.
 """
             
             final_answer = self.agent_manager.client.chat_completion(
@@ -174,12 +176,18 @@ CRITICAL RULES:
         sql_query = self.agent_manager.client.chat_completion(
             settings.agent_three_model,
             [
-                {"role": "system", "content": "You are a pristine text-to-sql assistant outputting purely MySQL SELECT queries."},
+                {"role": "system", "content": "You are a pristine text-to-sql assistant outputting purely SQLite SELECT queries."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.0,
         ).strip()
-        sql_query = sql_query.replace("```sql", "").replace("```mysql", "").replace("```", "").strip()
+        
+        match = re.search(r"```(?:sql|sqlite|mysql)?\s*(.*?)\s*```", sql_query, re.IGNORECASE | re.DOTALL)
+        if match:
+            sql_query = match.group(1).strip()
+        else:
+            sql_query = sql_query.replace("```sqlite", "").replace("```sql", "").replace("```mysql", "").replace("```", "").strip()
+            
         return sql_query
 
     def _warning_from_agent_error(self, exc: Exception) -> str:

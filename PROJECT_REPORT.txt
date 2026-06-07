@@ -1,0 +1,189 @@
+MY FINANCE BUDDY - COMPREHENSIVE AI AGENT HANDOFF MANUAL
+Generated: 2026-04-07
+Project root: D:\my-finance-buddy
+
+============================================================
+1. PROJECT OVERVIEW
+============================================================
+My Finance Buddy is a local-first, AI-augmented full-stack web application designed for personal finance management.
+Problem Modeled: Scattered financial records, loans, and assets.
+Solution provided: An automated pipeline that ingests bank PDFs, securely extracts transactions locally, dynamically parses unknown elements via LLM agents to ensure privacy, and visualizes them on a unified React dashboard.
+
+Core Rule for AI Agents: You MUST NEVER hallucinate schemas, environment variables, or tool paths. Always refer to this document for the absolute baseline truth of the architecture. If a file or variable is not mapped here, verify its existence using `grep_search` before assuming it exists.
+
+============================================================
+2. DEPLOYMENT & TECH STACK
+============================================================
+- Environments: Run purely locally (no external cloud hosting for DB).
+- Frontend: React (Hooks, Context API), TailwindCSS for styling, Recharts (visuals), Axios.
+- Backend: Python 3, FastAPI, SQLAlchemy ORM, Uvicorn server, strictly typed endpoints.
+- Database: SQLite (local `my_finance_buddy.db` file managed by SQLAlchemy).
+- Integrations/AI Tools: The ONLY utilized language model API is Groq (`llama-3.1-8b-instant`). OpenRouter and ChromaDB are officially DEPRECATED and REMOVED from the system. Agent 1, 2, and 3 use Groq.
+- Start Commands: `npm run dev` (Frontend) and `uvicorn main:app --reload` (Backend).
+
+============================================================
+3. DIRECTORY & EXACT FOLDER STRUCTURE
+============================================================
+D:\my-finance-buddy
+|-- backend/
+|   |-- my_finance_buddy.db              <- SQLite Data storage
+|   |-- main.py                          <- FastAPI Entry point and CORS configuration
+|   |-- requirements.txt                 <- Python dependencies
+|   |-- .env / .env.example              <- Environment variables (contains GROQ_API_KEY)
+|   |-- agents/                          <- AI interactions layer
+|   |   |-- agent1_extraction.py         <- Merchant name extraction logic
+|   |   |-- agent2_categorization.py     <- Categorization logic
+|   |   |-- agent_manager.py             <- Orchestrator containing Groq requests and batch rate-limiting logic
+|   |-- database/                        <- SQL layer
+|   |   |-- models.py                    <- SQLAlchemy DB tables
+|   |   |-- session.py                   <- Engine and sessionmaker bindings
+|   |-- rag/                             <- Chatbot layer
+|   |   |-- chatbot_service.py           <- Text-to-SQL logic (SQLite3 RAG)
+|   |   |-- prompt_builder.py            <- LLM Prompt builders
+|   |-- routers/                         <- FastAPI Endpoints
+|   |   |-- assets_router.py             <- Asset CRUD operations (GET/POST/PATCH/DELETE)
+|   |   |-- auth_router.py               <- Login/Register (/auth/login, /auth/register)
+|   |   |-- chat_router.py               <- RAG Chat endpoint (/chat)
+|   |   |-- loans_router.py              <- Loans CRUD operations (/loans)
+|   |   |-- reset_router.py              <- Dashboard reset operations
+|   |   |-- statements.py                <- Statement processing status 
+|   |   |-- upload_router.py             <- PDF ingestion (/upload-statement)
+|   |-- services/                        <- Business logic and Core parsing
+|   |   |-- auth_service.py              <- JWT and password crypt
+|   |   |-- groq_client.py               <- Direct wrapper for Groq HTTP POST requests
+|   |   |-- parsing.py                   <- Deterministic Bank string parsers
+|   |   |-- pdf_extractor.py             <- PDF to text ripped via pdfplumber
+|   |-- utils/
+|       |-- config.py                    <- Pydantic BaseSettings loading .env (uses `groq_api_key`)
+|       |-- merchant_rules.py            <- Static regex maps mapping known merchants to categories
+|
+|-- frontend/
+|   |-- package.json
+|   |-- public/
+|   |-- src/
+|       |-- App.js                       <- React Router Routes mapped here
+|       |-- index.js                     <- React root rendering
+|       |-- index.css                    <- TailwindCSS injection
+|       |-- components/                  <- Layout widgets
+|           |-- ActionButtonCard.js, ChartsGrid.js, NonBankingTransactionTable.js, ProtectedRoute.js
+|           |-- SummaryCard.js, TooltipIcon.js, TransactionTable.js, TypewriterQuotes.js, UploadStatusCard.js
+|       |-- context/                     <- Global React State
+|           |-- AuthContext.js           <- Provides JWT auth tokens globally
+|       |-- pages/                       <- Main views
+|           |-- AuthPage.js              <- Login and Registration UI
+|           |-- ChatbotPage.js           <- RAG conversational UI
+|           |-- FinanceDashboardPage.js  <- Main summary dashboard
+|           |-- LoansPage.js             <- Assets & Liabilities UI
+|           |-- TransactionsPage.js      <- Raw list view of all transactions
+|       |-- services/                    <- Axios wrappers fetching to `http://localhost:8000`
+
+============================================================
+4. DETAILED DATABASE SCHEMA (SQLITE3)
+============================================================
+The system runs strictly on SQLite3. AI Agents MUST respect these exact table names, columns, and types. Do NOT assume MySQL commands (e.g. use `STRFTIME` instead of `YEAR()`). All foreign keys point heavily to `users.id`.
+
+Tables:
+
+1. `users` -> Primary account holders
+   - `id` (INTEGER PPI)
+   - `name` (VARCHAR)
+   - `user_id` (VARCHAR UNIQUE)
+   - `password_hash`, `password_salt` (VARCHAR)
+   - `created_at` (DATETIME)
+
+2. `user_sessions` -> Bearer token persistence
+   - `id` (INTEGER PPI)
+   - `user_id` (FOREIGN KEY -> users.id)
+   - `token_hash` (VARCHAR UNIQUE)
+   - `created_at`, `last_used_at` (DATETIME)
+
+3. `statements` -> Tracks uploaded PDFs to prevent duplication
+   - `id` (INTEGER PPI)
+   - `user_id` (FOREIGN KEY -> users.id)
+   - `filename` (VARCHAR)
+   - `uploaded_at` (DATETIME)
+   - `source_hash` (VARCHAR) -> SHA256 of the PDF bytes.
+
+4. `raw_statement_lines` -> Stores raw unparsed lines from PDF
+   - `id` (INTEGER PPI)
+   - `statement_id` (FOREIGN KEY -> statements.id)
+   - `raw_text` (TEXT)
+   - `parser_confidence` (FLOAT)
+
+5. `transactions` -> The central ledger holding bank rows
+   - `id` (INTEGER PPI)
+   - `raw_line_id` (FOREIGN KEY -> raw_statement_lines.id)
+   - `statement_id` (FOREIGN KEY -> statements.id)
+   - `transaction_date` (DATE) -> Format: YYYY-MM-DD
+   - `merchant` (VARCHAR)
+   - `amount` (FLOAT)
+   - `transaction_type` (VARCHAR) -> 'credit' or 'debit'
+   - `category` (VARCHAR) -> Tagged category e.g. "Food & Dining"
+   - `description` (TEXT)
+
+6. `non_banking_transactions` -> Manual ledger entries
+   - `id` (INTEGER PPI)
+   - `user_id` (FOREIGN KEY -> users.id)
+   - `transaction_date` (DATE)
+   - `beneficiary` (VARCHAR)
+   - `amount` (FLOAT)
+   - `transaction_type` (VARCHAR)
+   - `category` (VARCHAR)
+   - `description` (TEXT)
+
+7. `loans` 
+   - `id` (INTEGER PPI)
+   - `user_id` (FOREIGN KEY -> users.id)
+   - `loan_name`, `lender` (VARCHAR)
+   - `principal_amount`, `interest_rate`, `emi_amount`, `total_paid` (FLOAT)
+   - `tenure_months` (INTEGER)
+   - `start_date` (DATE)
+   - `status` (VARCHAR default "active")
+   - `notes` (TEXT)
+
+8. `assets`
+   - `id` (INTEGER PPI)
+   - `user_id` (FOREIGN KEY -> users.id)
+   - `asset_name` (VARCHAR)
+   - `purchase_price`, `rate_per_year` (FLOAT)
+   - `purchase_year` (INTEGER)
+   - `notes` (TEXT)
+
+============================================================
+5. AI AGENT PIPELINE & WORKFLOWS
+============================================================
+The system avoids expensive massive context dumps and 413 Errors by creating a multi-layered verification system. All AI Agents are built natively using the `GroqClient` routing to `llama-3.1-8b-instant`. The single API key variable `GROQ_API_KEY` operates all agents.
+
+Step-by-Step PDF Ingestion (`upload_router.py` -> `statement_service.py`):
+1. User uploads a PDF. Python `pdfplumber` rips all text.
+2. The custom `parsing.py` regex module slices the text into raw rows and scores it dynamically on confidence.
+3. Agent 1 (Merchant Extraction): 
+   - ONLY triggers on transactions where the deterministic parser failed to confidently find a merchant name (confidence score falloff). 
+   - Prompts the LLM purely for the merchant name using batched sets.
+   - Batch limits (e.g. 10 rows) logic is strictly enforced using `time.sleep()` injected inside `agent_manager.py` to prevent Groq API Tier 1 limits (6,000 TPM/30 RPM).
+4. Deterministic Categorization (`categorizer.py`):
+   - Fast evaluation against historical identical database merchants.
+   - Checks static regex maps in `utils/merchant_rules.py` (e.g. "zomato" -> "Food & Dining").
+5. Agent 2 (Categorization LLM):
+   - Only processes the scraps completely missed by deterministic filtering. Returns exactly one category from the predefined string list.
+   - Has strict Token limiting.
+
+============================================================
+6. RAG CHATBOT ARCHITECTURE (AGENT 3) 
+============================================================
+Housed in `rag/chatbot_service.py`. It is a true Text-to-SQLite3 RAG paradigm. We do NOT use ChromaDB or Vector stores.
+
+Flow:
+1. User submits natural text ("How much money did I spend on food?").
+2. The Backend detects the user context, injects the SQLite schemas natively into the prompt.
+3. It instructs Agent 3 to generate mathematically robust aggregated `SQLite3` queries strictly (no markdown blocks allowed, favors `SUM()` and `STRFTIME` functions, and uses `LIMIT 15` on raw row pulls to prevent TPM crash).
+4. Query runs against the DB locally.
+  - Sub-Flow (Retry Loop): If SQL validation fails, SQLAlchemy throws an exception. The backend automatically captures the string error code, feeds the broken SQL and the Error back to the LLM urging a fix, and tries again.
+5. Resulting DB JSON Array is returned to Agent 3 for Synthesis mode.
+6. The Synthesis Agent formats the data strictly using Indian Rupees (`Rs. `) constraint flags, discards markdown tables, and creates a concise bulleted answer delivered directly to the React Chat GUI.
+
+============================================================
+7. CONFIGURATION & STATE CACHING
+============================================================
+- `.env` Constraints: All model integrations listen to ONE master variable: `GROQ_API_KEY`. The variable `OPENROUTER_API_KEY` must never be referenced.
+- Frontend Caching (`sessionStorage`): API Endpoints like `/dashboard` returning large payload lists cache heavily in React states + sessionStorage. A global mutation (like Uploading a new PDF) flags a cache invalidation trigger, causing fresh backend hits. This keeps the UX instant and eliminates redundant DB hits.

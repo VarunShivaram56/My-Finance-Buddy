@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from agents.agent_manager import AgentManager
-from database.models import Loan, NonBankingTransaction, Statement, Transaction, User
+from database.models import Loan, NonBankingTransaction, RawStatementLine, Statement, Transaction, User
 from services.bank_profiles import get_supported_banks_payload
 from services.categorizer import CategorizationInput, TransactionCategorizer
 from services.dashboard_cache import dashboard_cache
@@ -96,7 +96,16 @@ class StatementService:
                 transaction_date = date.fromisoformat(transaction.date)
             except ValueError:
                 continue
+            raw_line = RawStatementLine(
+                statement_id=statement.id,
+                raw_text=transaction.raw_text or "",
+                parser_confidence=transaction.confidence
+            )
+            db.add(raw_line)
+            db.flush()
+
             db_transaction = Transaction(
+                raw_line_id=raw_line.id,
                 statement_id=statement.id,
                 transaction_date=transaction_date,
                 merchant=transaction.merchant or "Unknown",
@@ -104,8 +113,6 @@ class StatementService:
                 transaction_type=transaction.transaction_type or "debit",
                 category=category,
                 description=transaction.description,
-                raw_text=transaction.raw_text,
-                parser_confidence=transaction.confidence,
             )
             db.add(db_transaction)
             db_transactions.append(db_transaction)

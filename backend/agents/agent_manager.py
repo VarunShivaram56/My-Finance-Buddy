@@ -6,7 +6,6 @@ import time
 from typing import TYPE_CHECKING
 
 from services.groq_client import GroqClient
-from services.openrouter_client import OpenRouterClient
 from utils.config import settings
 from utils.merchant_rules import CATEGORIES, MERCHANT_CATEGORY_MAP
 
@@ -67,10 +66,10 @@ class AgentManager:
     def __init__(self) -> None:
         self.agent1_model = _resolve_groq_model(settings.agent_one_model, agent_name="agent1")
         self.agent2_model = _resolve_groq_model(settings.agent_two_model, agent_name="agent2")
-        self.agent3_model = settings.agent_three_model
-        self.agent1_client = GroqClient(settings.agent_one_api_key, agent_name="agent1")
-        self.agent2_client = GroqClient(settings.agent_two_api_key, agent_name="agent2")
-        self.agent3_client = OpenRouterClient()
+        self.agent3_model = _resolve_groq_model(settings.agent_three_model, agent_name="agent3")
+        self.agent1_client = GroqClient(settings.groq_api_key, agent_name="agent1")
+        self.agent2_client = GroqClient(settings.groq_api_key, agent_name="agent2")
+        self.agent3_client = GroqClient(settings.groq_api_key, agent_name="agent3")
         self.client = self.agent3_client
 
     # ------------------------------------------------------------------
@@ -348,7 +347,7 @@ class AgentManager:
 
     def _chat_with_client(
         self,
-        client: GroqClient | OpenRouterClient,
+        client: GroqClient,
         model: str,
         messages: list[dict],
         temperature: float = 0.1,

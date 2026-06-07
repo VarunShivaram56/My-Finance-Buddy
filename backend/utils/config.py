@@ -9,14 +9,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = f"sqlite:///{(BASE_DIR / 'my_finance_buddy.db').as_posix()}"
-    agent_one_api_key: str = ""
-    agent_two_api_key: str = ""
-    agent_three_api_key: str = ""
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    groq_api_key: str = ""
     agent_one_model: str = "llama-3.1-8b-instant"
     agent_two_model: str = "llama-3.1-8b-instant"
-    agent_three_model: str = "openai/gpt-oss-120b"
+    agent_three_model: str = "llama-3.1-8b-instant"
     embedding_model: str = "nomic-embed-text"
     chroma_dir: str = "./chroma_data"
     llm_confidence_threshold: float = 0.65
